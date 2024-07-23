@@ -28,23 +28,6 @@ namespace LinearMatrixComputation {
         // We are solving the integral of BT * D * B
         // B is the matrix of gradients, which is the matrix of strains (symmetric gradient * displacement)
 
-        // D is our plane strain matrix, which we initialize here
-//        LF_ASSERT_MSG(std::abs(nu - 0.5) >= (0.0001), "Value of nu (0.5) will lead to a divide by zero");
-//        Eigen::Matrix<double, 3, 3> D;
-//        D << (1 - nu), nu, 0.0,
-//            nu, (1- nu), 0.0,
-//            0.0, 0.0, (1 - 2 * nu) / 2.0;
-//        D *= youngmodulus / ((1 + nu) * (1 - 2 * nu));
-
-         //Initialize D as a plane stress matrix, likely not needed
-        LF_ASSERT_MSG((std::abs(nu - 1.0) >= (0.0001)), "Value of nu (1.0) will lead to a divide by zero");
-         Eigen::Matrix<double, 3, 3> D;
-         D << 1.0, nu, 0.0,
-             nu, 1.0, 0.0,
-             0.0, 0.0, (1 - nu) / 2.0;
-         D *= youngmodulus / (1 - nu * nu);
-
-
         switch (ref_el) {
             case lf::base::RefEl::kTria(): {
                 const double area = lf::geometry::Volume(*(cell.Geometry()));
@@ -214,6 +197,124 @@ namespace LinearMatrixComputation {
             }
         }
         return elem_vec;
+    }
+
+    //This function implements post-processing to allow for the calculation of stresses and strains at various
+    //points on the mesh (in this case the quadrature points)
+    //The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature points, they are stored
+    //as column _vectors
+    std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> LinearFEElementMatrix::stressStrain
+    (const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh) {
+
+        const lf::base::RefEl ref_el {cell.RefEl()};
+        const lf::geometry::Geometry *geo_ptr {cell.Geometry()};
+
+        switch (ref_el) {
+
+            case lf::base::RefEl::kTria() : {
+
+                //Declare the type of element, the quadrature rule, and the return matrices
+                lf::uscalfe::FeLagrangeO1Tria<double> element;
+                lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
+                Eigen::Matrix<double, 3, 6> stress;
+                Eigen::Matrix<double, 3, 6> strain;
+                stress.setZero();
+                strain.setZero();
+
+                //Initialize the vector of displacements for this particular cell
+                Eigen::VectorXd localu(6);
+                std::span<const lf::assemble::gdof_idx_t> indices (dofh.GlobalDofIndices(cell));
+                localu[0] = disp(indices[0] * 2);
+                localu[1] = disp(indices[0] * 2 + 1);
+                localu[2] = disp(indices[1] * 2);
+                localu[3] = disp(indices[1] * 2 + 1);
+                localu[4] = disp(indices[2] * 2);
+                localu[5] = disp(indices[2] * 2 + 1);
+
+                //This will be a 3x12 matrix for the 3 basis functions and the 6 quadrature points
+                auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
+
+                //Jacobian Inverse Gramian will give a 2x12 matrix (2x2 for each of the quadrature points)
+                auto JinvT = geo_ptr->JacobianInverseGramian(qr.Points());
+
+                //Declare our matrix B, which we will reinitialize at every quadrature point
+                Eigen::Matrix<double, 3, 6> B;
+
+                //basis will contain the gradients of the basis functions on the cell transformed to the reference element
+                Eigen::Matrix<double, 2, 3> basis;
+
+                //Loop over all quadrature points
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    //Initialize our basis functions at this quadrature point, transformed to reference element
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<3, 2>(0, 2*i)).transpose();
+
+                    //Initialize our matrix B depending on the basis matrix
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0,
+                            0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2),
+                            basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2);
+
+                    strain.block<3, 1>(0, i) << B * localu;
+                    stress.block<3, 1>(0, i) << D * strain.block<3, 1>(0, i);
+                }
+
+                return std::tuple(stress, strain, geo_ptr->Global(qr.Points()));
+            }
+
+            case lf::base::RefEl::kQuad() : {
+
+                //Declare the type of element, the quadrature rule, and the return matrices
+                lf::uscalfe::FeLagrangeO1Quad<double> element;
+                lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
+                Eigen::Matrix<double, 3, 4> stress;
+                Eigen::Matrix<double, 3, 4> strain;
+                stress.setZero();
+                strain.setZero();
+
+                //Initialize the vector of displacements for this particular cell
+                Eigen::VectorXd localu(8);
+                std::span<const lf::assemble::gdof_idx_t> indices (dofh.GlobalDofIndices(cell));
+                localu[0] = disp(indices[0] * 2);
+                localu[1] = disp(indices[0] * 2 + 1);
+                localu[2] = disp(indices[1] * 2);
+                localu[3] = disp(indices[1] * 2 + 1);
+                localu[4] = disp(indices[2] * 2);
+                localu[5] = disp(indices[2] * 2 + 1);
+                localu[6] = disp(indices[3] * 2);
+                localu[7] = disp(indices[3] * 2 + 1);
+
+                //This will be a 4x8 matrix, for the 4 basis functions and the 4 quadrature points
+                auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
+
+                //Jacobian Inverse Gramian will give a 2x8 matrix (2x2 for each of the quadrature points)
+                auto JinvT = geo_ptr->JacobianInverseGramian(qr.Points());
+
+                //Declare our matrix B, which we will reinitialize at every quadrature point
+                Eigen::Matrix<double, 3, 8> B;
+
+                //basis will contain the gradients of the basis functions on the cell transformed to the reference element
+                Eigen::Matrix<double, 2, 4> basis;
+
+                //Loop over all quadrature points
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    //Initialize our basis functions at this quadrature point, transformed to reference element
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<4, 2>(0, 2*i)).transpose();
+
+                    //Initialize our matrix B depending on the basis matrix
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0, basis(0,3), 0.0,
+                            0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2), 0.0, basis(1,3),
+                            basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2), basis(1,3), basis(0,3);
+
+                    strain.block<3, 1>(0, i) << B * localu;
+                    stress.block<3, 1>(0, i) << D * strain.block<3, 1>(0, i);
+                }
+
+                return std::tuple(stress, strain, geo_ptr->Global(qr.Points()));
+            }
+
+            default: {
+                LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
+            }
+        }
     }
 
 }

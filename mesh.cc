@@ -13,13 +13,51 @@
 #include "linear_elasticity_assembler.h"
 #include "parametric_matrix_computation.h"
 
+std::vector<long> dist0nodes;
 
+//This method uses sol_vec and dist0nodes to build the full solution vector, which will include the prescribed
+//displacement BCs
+Eigen::VectorXd adjustDisplacementVector (Eigen::VectorXd sol_vec, unsigned int N_dofs) {
+
+    //Initialize intended return vector of displacements
+    Eigen::VectorXd u_vec = Eigen::VectorXd::Zero(2 * N_dofs);
+
+    //Ensure that dist0nodes is nonempty
+    int j = -1;
+    if (!dist0nodes.empty()) {
+        j = 0;
+    }
+    else {
+        return sol_vec;
+    }
+
+    //Loops over the indices of all nodes
+    bool check = true;
+    int k = 0;
+    for (int i = 0; i < N_dofs; i++) {
+        if (check and i == dist0nodes[j]) {
+            j++;
+            if (j >= dist0nodes.size()) {
+                check = false;
+                //j = dist0nodes.size() - 1;
+            }
+        }
+        else {
+            u_vec[2 * i] = sol_vec(2 * k);
+            u_vec[2 * i + 1] = sol_vec(2 * k + 1);
+            k++;
+        }
+    }
+    return u_vec;
+}
+
+//Only the method adjustSolution is allowed to modify dist0nodes, which contains the indices of the points
+//to be removed in the solution vector
 std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>> adjustSolution
-                    (const lf::io::GmshReader &reader, lf::assemble::COOMatrix<double> A
-                     , Eigen::Matrix<double, Eigen::Dynamic, 1> phi, int physicalNum) {
+                    (const lf::io::GmshReader &reader, lf::assemble::COOMatrix<double> &A
+                     , Eigen::Matrix<double, Eigen::Dynamic, 1> &phi, int physicalNum) {
 
     //Vector of nodes that will need to be "removed" from stiffness matrix as they have a 0 displacement BC
-    std::vector<long> dist0nodes;
 
     std::shared_ptr<lf::uscalfe::UniformScalarFESpace<double>> fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO1<double>>(reader.mesh());
     const lf::mesh::Mesh &mesh {*(reader.mesh())};
@@ -118,7 +156,7 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
         std::function<Eigen::Vector2d (const Eigen::Vector2d &)> traction = [] (const Eigen::Vector2d &coords) {
             double eps = 1.0e-5;
             Eigen::Vector2d trac;
-            if (coords(0) < (2 + eps) and coords(0) > (-eps) and abs(coords(1) - 1) < eps) {
+            if (abs(coords(1) - 1) < eps) {
                 trac << 0.0, -20.0;
             }
             else {
@@ -129,13 +167,37 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
 
         double E = 30000000.0;
         double v = 0.3;
-        LinearMatrixComputation::LinearFEElementMatrix assemble {E, v};
+        //False in our constructor means we are doing a plane-stress calculation
+        LinearMatrixComputation::LinearFEElementMatrix assemble {E, v, false};
         LinearMatrixComputation::LinearFELoadVector load {bd_flags, traction};
+
+//        ParametricMatrixComputation::ParametricFEElementMatrix assemble {E, v, false};
+//        ParametricMatrixComputation::ParametricFELoadVector load {bd_flags, traction};
 
         LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
         LinearElasticityAssembler::AssembleVectorLocally(1, dofh, load, phi);
 
         result = adjustSolution(reader, A, phi, 10);
+
+//        Eigen::VectorXd sol_vec = Eigen::VectorXd::Zero(2 * N_dofs);
+//
+//        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+//        solver.compute(result.first);
+//
+//        if (solver.info() != Eigen::Success) {
+//            throw std::runtime_error("Could not decompose the matrix");
+//        }
+//        sol_vec = solver.solve(result.second);
+//
+//        //std::cout << sol_vec.lpNorm<Eigen::Infinity>() << std::endl;
+//        std::cout << sol_vec << std::endl;
+//        auto adjusted_result = adjustDisplacementVector(sol_vec, N_dofs);
+//        for (auto *entity : mesh.Entities(0)) {
+//            auto trio = assemble.stressStrain(*entity, adjusted_result, dofh);
+//            std::cout << std::get<0>(trio) << "\n" << std::endl;
+//            std::cout << std::get<1>(trio) << std::endl;
+//            std::cout << std::get<2>(trio) << std::endl;
+//        }
     }
 
 
@@ -162,7 +224,8 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
 
         double E = 100000.0;
         double v = 0.3;
-        LinearMatrixComputation::LinearFEElementMatrix assemble {E, v};
+        //False in our constructor means we are doing a plane-stress calculation
+        LinearMatrixComputation::LinearFEElementMatrix assemble {E, v, false};
         LinearMatrixComputation::LinearFELoadVector load {bd_flags, traction, body};
 
         LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
@@ -170,6 +233,7 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
         LinearElasticityAssembler::AssembleVectorLocally(0, dofh, load, phi);
 
         result = adjustSolution(reader, A, phi, 8);
+
     }
 
 
@@ -212,7 +276,8 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
 
 
         if (num == 20 or num == 22 or num == 24) {
-            LinearMatrixComputation::LinearFEElementMatrix assemble{E, v};
+            //False in our constructor means we are doing a plane-stress calculation
+            LinearMatrixComputation::LinearFEElementMatrix assemble{E, v, false};
             LinearMatrixComputation::LinearFELoadVector load{bd_flags, traction};
             LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
             LinearElasticityAssembler::AssembleVectorLocally(1, dofh, load, phi);
@@ -220,7 +285,7 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
             result = adjustSolution(reader, A, phi, 6);
         }
         else {
-            ParametricMatrixComputation::ParametricFEElementMatrix assemble{E, v};
+            ParametricMatrixComputation::ParametricFEElementMatrix assemble{E, v, false};
             ParametricMatrixComputation::ParametricFELoadVector load{bd_flags, traction};
             LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
             LinearElasticityAssembler::AssembleVectorLocally(1, dofh, load, phi);
@@ -269,7 +334,7 @@ void test_mesh(std::string path) {
 
     auto result = mesh_assembler(mesh_num, reader);
 
-    Eigen::VectorXd  sol_vec = Eigen::VectorXd::Zero(2 * N_dofs);
+    Eigen::VectorXd sol_vec = Eigen::VectorXd::Zero(2 * N_dofs);
 
     Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
     solver.compute(result.first);
@@ -279,16 +344,24 @@ void test_mesh(std::string path) {
     }
     sol_vec = solver.solve(result.second);
 
-    std::cout << sol_vec.lpNorm<Eigen::Infinity>() << std::endl;
+    //std::cout << sol_vec.lpNorm<Eigen::Infinity>() << std::endl;
     //std::cout << sol_vec << std::endl;
+    std::cout << "\n\n" << adjustDisplacementVector(sol_vec, N_dofs) << std::endl;
+//    std::cout << "\n" << adjustDisplacementVector(sol_vec, N_dofs).reshaped(2, N_dofs) << std::endl;
+    auto true_sol_vec = adjustDisplacementVector(sol_vec, N_dofs);
+    double E = 30000000.0;
+    double v = 0.3;
+    //False in our constructor means we are doing a plane-stress calculation
+    LinearMatrixComputation::LinearFEElementMatrix assemble {E, v, false};
+    ParametricMatrixComputation::ParametricFEElementMatrix assemblePar{E, v, false};
+    LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemble);
+    LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemblePar);
 
 }
 
 int main() {
-
-    test_mesh("/meshes/test24.msh");
-    test_mesh("/meshes/test25.msh");
-
+    test_mesh("/meshes/test0.msh");
+    //test_mesh("/meshes/test25.msh");
 }
 
 

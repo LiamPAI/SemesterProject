@@ -102,6 +102,93 @@ namespace LinearElasticityAssembler {
         }
     }
 
+
+    //This function intends to build all the matrices related to collocation points to train the PINN
+    //This consists of reshaping the displacement vector to (2, num_nodes) where each column represents ux and uy
+    //Along with the displacement vector, the function will return the corresponding node coordinates in the same shape, (2, num_nodes)
+    //This also includes the strain matrix, which will have shape (3, num_quad_points)
+    //The stress matrix will have the same shape as the strain matrix
+    //The stress and strain will be paired with their vector of coordinates, with shape (2, num_quad_points)
+    template<lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>
+    std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> pinnDataLoader
+            (const std::shared_ptr<lf::mesh::Mesh> &mesh_ptr, Eigen::VectorXd &disp_vec, ENTITY_MATRIX_PROVIDER &assembler, int degree) {
+
+        //Declare the mesh and the dof_handler for future use
+        std::shared_ptr<lf::uscalfe::UniformScalarFESpace<double>> fe_space;
+        if (degree == 1){
+            fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO1<double>>(mesh_ptr);
+        }
+        else {
+            fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO2<double>>(mesh_ptr);
+        }
+        const lf::assemble::DofHandler &dofh {fe_space->LocGlobMap()};
+        const lf::uscalfe::size_type N_dofs {dofh.NumDofs()};
+        auto mesh = dofh.Mesh();
+        //Build the matrix of node coordinates
+        Eigen::MatrixXd node_coords(2, N_dofs);
+        for (const lf::mesh::Entity *node : mesh->Entities(2)) {
+            node_coords.block<2, 1>(0, dofh.GlobalDofIndices(*node)[0])
+                    << node->Geometry()->Global(node->Geometry()->RefEl().NodeCoords());
+        }
+        //std::cout << node_coords << "\n" << std::endl;
+
+        //Build the matrix of displacements
+        Eigen::MatrixXd disp_mat(2, N_dofs);
+        disp_mat << disp_vec.reshaped(2, N_dofs);
+
+        //std::cout << disp_mat << std::endl;
+
+        //Build the matrix of stresses, strains, and quadrature point coordinates
+        Eigen::Matrix<double, 3, Eigen::Dynamic> stresses;
+        Eigen::Matrix<double, 3, Eigen::Dynamic> strains;
+        Eigen::Matrix<double, 2, Eigen::Dynamic> qr_coords;
+
+        for (const lf::mesh::Entity *cell : mesh->Entities(0)) {
+
+            const lf::base::RefEl ref_el {cell->RefEl()};
+            auto trio = assembler.stressStrain(*cell, disp_vec, dofh);
+
+            switch (ref_el) {
+
+                //In this case we must expand the matrix by 6 columns to fit the new points
+                case lf::base::RefEl::kTria() : {
+
+                    auto cols = stresses.cols();
+                    stresses.conservativeResize(Eigen::NoChange_t(), cols + 6);
+                    strains.conservativeResize(Eigen::NoChange_t(), cols + 6);
+                    qr_coords.conservativeResize(Eigen::NoChange_t(), cols + 6);
+
+                    stresses.block<3, 6>(0, cols) << std::get<0>(trio);
+                    strains.block<3, 6>(0, cols) << std::get<1>(trio);
+                    qr_coords.block<2, 6>(0, cols) << std::get<2>(trio);
+
+                    break;
+                }
+
+                //In this case we must expand the matrix by 4 columns to fit the new points
+                case lf::base::RefEl::kQuad() : {
+
+                    auto cols = stresses.cols();
+                    stresses.conservativeResize(Eigen::NoChange_t(), cols + 4);
+                    strains.conservativeResize(Eigen::NoChange_t(), cols + 4);
+                    qr_coords.conservativeResize(Eigen::NoChange_t(), cols + 4);
+
+                    stresses.block<3, 4>(0, cols) << std::get<0>(trio);
+                    strains.block<3, 4>(0, cols) << std::get<1>(trio);
+                    qr_coords.block<2, 4>(0, cols) << std::get<2>(trio);
+
+                    break;
+                }
+
+                default: {
+                    LF_ASSERT_MSG(false, "Illegal Entity Type sent to pinnDataLoader");
+                }
+            }
+        }
+
+        return std::tuple(disp_mat, node_coords, stresses, strains, qr_coords);
+    }
+
 }
 
 #endif //GETTINGSTARTED_LINEAR_ELASTICITY_ASSEMBLER_H

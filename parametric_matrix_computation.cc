@@ -14,33 +14,17 @@
 //stiffness matrices and load vector on a given mesh
 namespace ParametricMatrixComputation {
 
-    Eigen::Matrix<double, 8, 8> ParametricFEElementMatrix::Eval(const lf::mesh::Entity &cell) {
+    Eigen::Matrix<double, 18, 18> ParametricFEElementMatrix::Eval(const lf::mesh::Entity &cell) {
 
         // Obtain reference element, geometry, vertices, and initialize our return matrix
         const lf::base::RefEl ref_el {cell.RefEl()};
         const lf::geometry::Geometry *geo_ptr {cell.Geometry()};
-        Eigen::Matrix<double, 8, 8> elem_mat;
+        Eigen::Matrix<double, 18, 18> elem_mat;
         elem_mat.setZero();
 
         // Check if the reference element is a triangle/quadrilateral
         // We are solving the integral of BT * D * B
         // B is the matrix of gradients, which is the matrix of strains (symmetric gradient * displacement)
-
-        // D is our plane strain matrix, which we initialize here
-//        LF_ASSERT_MSG(std::abs(nu - 0.5) >= (0.0001), "Value of nu (0.5) will lead to a divide by zero");
-//        Eigen::Matrix<double, 3, 3> D;
-//        D << (1 - nu), nu, 0.0,
-//            nu, (1- nu), 0.0,
-//            0.0, 0.0, (1 - 2 * nu) / 2.0;
-//        D *= youngmodulus / ((1 + nu) * (1 - 2 * nu));
-
-        //Initialize D as a plane stress matrix, likely not needed
-        LF_ASSERT_MSG((std::abs(nu - 1.0) >= (0.0001)), "Value of nu (1.0) will lead to a divide by zero");
-        Eigen::Matrix<double, 3, 3> D;
-        D << 1.0, nu, 0.0,
-                nu, 1.0, 0.0,
-                0.0, 0.0, (1 - nu) / 2.0;
-        D *= youngmodulus / (1 - nu * nu);
 
         //Since the mesh is of order 2, the cells are of type Tria02() and QuadO2(), so they are already parametrized
         //We can use this to slightly alter the computation of element stiffness matrices, especially for triangles
@@ -49,7 +33,7 @@ namespace ParametricMatrixComputation {
         switch(ref_el) {
             case lf::base::RefEl::kTria(): {
 
-                lf::uscalfe::FeLagrangeO1Tria<double> element;
+                lf::uscalfe::FeLagrangeO2Tria<double> element;
                 //Make an order 4 quadrature rule, to keep the order the same with quads and triangles
                 lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
 
@@ -59,26 +43,34 @@ namespace ParametricMatrixComputation {
                 //Integration elements will give the 6 determinants of the Jacobian, one for each quadrature point
                 auto determinants = geo_ptr->IntegrationElement(qr.Points());
 
-                //This will give a 3x12 matrix, for the gradients of the 3 basis functions at the 6 different points
+                //This will give a 6x12 matrix, for the gradients of the 6 basis functions at the 6 different points
                 auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
 
                 //Declare our matrix B, which we will reinitialize at every quadrature point
-                Eigen::Matrix<double, 3, 8> B;
+                //The 3 by 12 comes from the symmetric gradients and the 6 basis functions
+                Eigen::Matrix<double, 3, 18> B;
 
                 //basis will contain the gradients of the basis functions on the cell transformed to the reference element
-                Eigen::Matrix<double, 2, 3> basis;
+                //There are 6 basis functions for an O2Tria, so basis is 2x6
+                Eigen::Matrix<double, 2, 6> basis;
 
                 //We will have to initialize B for every quadrature point
                 for (int i = 0; i < qr.NumPoints(); ++i) {
                     const double w = qr.Weights()[i] * determinants[i];
 
                     //Initialize our basis functions at this quadrature point, transformed to reference element
-                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<3, 2>(0, 2*i)).transpose();
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<6, 2>(0, 2*i)).transpose();
 
                     //Initialize our matrix B depending on the basis matrix, zeros are on the end since this is a triangle
-                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0, 0.0, 0.0,
-                            0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2), 0.0, 0.0,
-                            basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2), 0.0, 0.0;
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0,
+                    basis(0, 3), 0.0, basis(0, 4), 0.0, basis(0, 5), 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2),
+                    0.0, basis(1,3), 0.0, basis(1,4), 0.0, basis(1,5),
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2),
+                    basis(1,3), basis(0,3), basis(1,4), basis(0,4), basis(1,5), basis(0,5),
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
 
                     //Add product to our element stiffness matrix
                     elem_mat += w * B.transpose() * D * B;
@@ -88,8 +80,8 @@ namespace ParametricMatrixComputation {
 
             case lf::base::RefEl::kQuad(): {
 
-                //I choose to still use only 4 nodal functions on a quadrangle, and quadrature rule of order 4
-                lf::uscalfe::FeLagrangeO1Quad<double> element;
+                //I choose to use a second order quadrangle, to be match the 2nd order parametrization of the shape
+                lf::uscalfe::FeLagrangeO2Quad<double> element;
                 lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
 
                 //Jacobian Inverse Gramian will give a 2x8 matrix (2x2 for each of the quadrature points)
@@ -98,26 +90,32 @@ namespace ParametricMatrixComputation {
                 //Integration elements will give the 4 determinants of the Jacobian, one for each quadrature point
                 auto determinants = geo_ptr->IntegrationElement(qr.Points());
 
-                //This will give a 4x8 matrix, for the gradients of the 4 basis functions at the 4 different points
+                //This will give a 9x8 matrix, for the gradients of the 4 basis functions at the 4 different points
                 auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
 
                 //Declare our matrix B, which we will reinitialize at every quadrature point
-                Eigen::Matrix<double, 3, 8> B;
+                Eigen::Matrix<double, 3, 18> B;
 
                 //basis will contain the gradients of the basis functions on the cell transformed to the reference element
-                Eigen::Matrix<double, 2, 4> basis;
+                Eigen::Matrix<double, 2, 9> basis;
 
                 //We will have to initialize B for every quadrature point
                 for (int i = 0; i < qr.NumPoints(); ++i) {
                     const double w = qr.Weights()[i] * determinants[i];
 
                     //Initialize our basis functions at this quadrature point, transformed to reference element
-                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<4, 2>(0, 2*i)).transpose();
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<9, 2>(0, 2*i)).transpose();
 
                     //Initialize our matrix B depending on the basis matrix
-                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0, basis(0,3), 0.0,
-                            0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2), 0.0, basis(1,3),
-                            basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2), basis(1,3), basis(0,3);
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0,
+                    basis(0,3), 0.0, basis(0,4), 0.0, basis(0,5), 0.0,
+                    basis(0,6), 0.0, basis(0,7), 0.0, basis(0,8), 0.0,
+                    0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2),
+                    0.0, basis(1,3), 0.0, basis(1,4), 0.0, basis(1,5),
+                    0.0, basis(1,6), 0.0, basis(1,7), 0.0, basis(1,8),
+                    basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2),
+                    basis(1,3), basis(0,3), basis(1,4), basis(0,4), basis(1,5), basis(0,5),
+                    basis(1,6), basis(0,6), basis(1,7), basis(0,7), basis(1,8), basis(0,8);
 
                     //Add product to our element stiffness matrix
                     elem_mat += w * B.transpose() * D * B;
@@ -132,11 +130,11 @@ namespace ParametricMatrixComputation {
     }
 
 
-    Eigen::Vector<double, 8> ParametricFELoadVector::Eval(const lf::mesh::Entity &entity) {
+    Eigen::Vector<double, 18> ParametricFELoadVector::Eval(const lf::mesh::Entity &entity) {
 
         const lf::base::RefEl ref_el {entity.RefEl()};
         const lf::geometry::Geometry *geo_ptr {entity.Geometry()};
-        Eigen::Vector<double, 8> elem_vec;
+        Eigen::Vector<double, 18> elem_vec;
         elem_vec.setZero();
 
         //Due to the implementation of isActive, we know that if the entity is a triangle or quadrilateral, that body_f
@@ -151,14 +149,13 @@ namespace ParametricMatrixComputation {
             case lf::base::RefEl::kSegment(): {
 
                 //Since this is a segment, we only need to evaluate the traction integral
-                lf::uscalfe::FeLagrangeO1Segment<double> segment;
+                lf::uscalfe::FeLagrangeO2Segment<double> segment;
                 lf::quad::QuadRuleCache qr_cache;
                 const lf::quad::QuadRule& qr = qr_cache.Get(ref_el, 4);
-
                 //Integration elements will give the determinants of the Jacobian, one for each quadrature point
                 auto determinants = geo_ptr->IntegrationElement(qr.Points());
 
-                //This will give a 2xNumPoints matrix, for the values of the 2 basis functions at the different points
+                //This will give a 3xNumPoints matrix, for the values of the 2 basis functions at the different points
                 auto precomp = segment.EvalReferenceShapeFunctions(qr.Points());
 
                 //Loop over quadrature points
@@ -173,20 +170,23 @@ namespace ParametricMatrixComputation {
                     elem_vec(1) += w * trac(1) * precomp(0, i);
                     elem_vec(2) += w * trac(0) * precomp(1, i);
                     elem_vec(3) += w * trac(1) * precomp(1, i);
-                 }
+                    elem_vec(4) += w * trac(0) * precomp(2, i);
+                    elem_vec(5) += w * trac(1) * precomp(2, i);
+                }
                 break;
             }
 
             case lf::base::RefEl::kTria(): {
                 //Must evaluate the body force integral
                 //Declare quadrature rule and element type needed for basis function evaluations
-                lf::uscalfe::FeLagrangeO1Tria<double> tria;
+                lf::uscalfe::FeLagrangeO2Tria<double> tria;
                 lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
 
                 //Obtain determinant for each quadrature point
                 auto determinants = geo_ptr->IntegrationElement(qr.Points());
 
-                //This will give a 3x6 matrix, for each of the 3 basis functions and 6 quadrature points
+                //This will give a 6x6 matrix, for each of the 6 basis functions and 6 quadrature points
+                //1 entire column per basis function
                 auto precomp = tria.EvalReferenceShapeFunctions(qr.Points());
 
                 //Loop over quadrature points
@@ -203,6 +203,12 @@ namespace ParametricMatrixComputation {
                     elem_vec(3) += w * body(1) * precomp(1, i);
                     elem_vec(4) += w * body(0) * precomp(2, i);
                     elem_vec(5) += w * body(1) * precomp(2, i);
+                    elem_vec(6) += w * body(0) * precomp(3, i);
+                    elem_vec(7) += w * body(1) * precomp(3, i);
+                    elem_vec(8) += w * body(0) * precomp(4, i);
+                    elem_vec(9) += w * body(1) * precomp(4, i);
+                    elem_vec(10) += w * body(0) * precomp(5, i);
+                    elem_vec(11) += w * body(1) * precomp(5, i);
                 }
                 break;
             }
@@ -210,13 +216,13 @@ namespace ParametricMatrixComputation {
             case lf::base::RefEl::kQuad(): {
                 //Must evaluate the body force integral
                 //Declare quadrature rule and element type needed for basis function evaluations
-                lf::uscalfe::FeLagrangeO1Quad<double> quad;
+                lf::uscalfe::FeLagrangeO2Quad<double> quad;
                 lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
 
                 //Obtain determinant for each quadrature point
                 auto determinants = geo_ptr->IntegrationElement(qr.Points());
 
-                //This will give a 4x4 matrix, for each of the 4 basis functions and 4 quadrature points
+                //This will give a 9x4 matrix, for each of the 4 basis functions and 4 quadrature points
                 auto precomp = quad.EvalReferenceShapeFunctions(qr.Points());
 
                 for (int i = 0; i < qr.NumPoints(); i++) {
@@ -234,6 +240,16 @@ namespace ParametricMatrixComputation {
                     elem_vec(5) += w * body(1) * precomp(2, i);
                     elem_vec(6) += w * body(0) * precomp(3, i);
                     elem_vec(7) += w * body(1) * precomp(3, i);
+                    elem_vec(8) += w * body(0) * precomp(4, i);
+                    elem_vec(9) += w * body(1) * precomp(4, i);
+                    elem_vec(10) += w * body(0) * precomp(5, i);
+                    elem_vec(11) += w * body(1) * precomp(5, i);
+                    elem_vec(12) += w * body(0) * precomp(6, i);
+                    elem_vec(13) += w * body(1) * precomp(6, i);
+                    elem_vec(14) += w * body(0) * precomp(7, i);
+                    elem_vec(15) += w * body(1) * precomp(7, i);
+                    elem_vec(16) += w * body(0) * precomp(8, i);
+                    elem_vec(17) += w * body(1) * precomp(8, i);
                 }
                 break;
             }
@@ -242,6 +258,155 @@ namespace ParametricMatrixComputation {
             }
         }
         return elem_vec;
+    }
+
+
+    //This function implements post-processing to allow for the calculation of stresses and strains at various
+    //points on the mesh (in this case the quadrature points)
+    //The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature point, they are stored
+    //as column _vectors
+    //TODO check that this is correctly implemented
+    std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> ParametricFEElementMatrix::stressStrain
+    (const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh) {
+
+        const lf::base::RefEl ref_el {cell.RefEl()};
+        const lf::geometry::Geometry *geo_ptr {cell.Geometry()};
+
+        switch (ref_el) {
+
+            case lf::base::RefEl::kTria() : {
+
+                //Declare the type of element, the quadrature rule, and the return matrices
+                lf::uscalfe::FeLagrangeO2Tria<double> element;
+                lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
+
+                //3x6, 3 for the strain vector and 6 for the 6 quadrature points
+                Eigen::Matrix<double, 3, 6> stress;
+                Eigen::Matrix<double, 3, 6> strain;
+                stress.setZero();
+                strain.setZero();
+
+                //Initialize the vector of displacements for this particular cell
+                Eigen::VectorXd localu(12);
+                std::span<const lf::assemble::gdof_idx_t> indices (dofh.GlobalDofIndices(cell));
+                localu[0] = disp(indices[0] * 2);
+                localu[1] = disp(indices[0] * 2 + 1);
+                localu[2] = disp(indices[1] * 2);
+                localu[3] = disp(indices[1] * 2 + 1);
+                localu[4] = disp(indices[2] * 2);
+                localu[5] = disp(indices[2] * 2 + 1);
+                localu[6] = disp(indices[3] * 2);
+                localu[7] = disp(indices[3] * 2 + 1);
+                localu[8] = disp(indices[4] * 2);
+                localu[9] = disp(indices[4] * 2 + 1);
+                localu[10] = disp(indices[5] * 2);
+                localu[11] = disp(indices[5] * 2 + 1);
+
+                //This will be a 6x12 matrix for the 6 basis functions and the 6 quadrature points
+                auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
+
+                //Jacobian Inverse Gramian will give a 2x12 matrix (2x2 for each of the quadrature points)
+                auto JinvT = geo_ptr->JacobianInverseGramian(qr.Points());
+
+                //Declare our matrix B, which we will reinitialize at every quadrature point
+                Eigen::Matrix<double, 3, 12> B;
+
+                //basis will contain the gradients of the basis functions on the cell transformed to the reference element
+                Eigen::Matrix<double, 2, 6> basis;
+
+                //Loop over all quadrature points
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    //Initialize our basis functions at this quadrature point, transformed to reference element
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<6, 2>(0, 2*i)).transpose();
+
+                    //Initialize our matrix B depending on the basis matrix
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0,
+                            basis(0, 3), 0.0, basis(0, 4), 0.0, basis(0, 5), 0.0,
+                            0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2),
+                            0.0, basis(1,3), 0.0, basis(1,4), 0.0, basis(1,5),
+                            basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2),
+                            basis(1,3), basis(0,3), basis(1,4), basis(0,4), basis(1,5), basis(0,5);
+
+                    strain.block<3, 1>(0, i) << B * localu;
+                    stress.block<3, 1>(0, i) << D * strain.block<3, 1>(0, i);
+                }
+
+                return std::tuple(stress, strain, geo_ptr->Global(qr.Points()));
+            }
+
+            case lf::base::RefEl::kQuad() : {
+
+                //Declare the type of element, the quadrature rule, and the return matrices
+                lf::uscalfe::FeLagrangeO2Quad<double> element;
+                lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
+
+                //3x4, 3 for the dimension of the vector, 4 for each of the quadrature points
+                Eigen::Matrix<double, 3, 4> stress;
+                Eigen::Matrix<double, 3, 4> strain;
+                stress.setZero();
+                strain.setZero();
+
+                //Initialize the vector of displacements for this particular cell
+                Eigen::VectorXd localu(18);
+                std::span<const lf::assemble::gdof_idx_t> indices (dofh.GlobalDofIndices(cell));
+                localu[0] = disp(indices[0] * 2);
+                localu[1] = disp(indices[0] * 2 + 1);
+                localu[2] = disp(indices[1] * 2);
+                localu[3] = disp(indices[1] * 2 + 1);
+                localu[4] = disp(indices[2] * 2);
+                localu[5] = disp(indices[2] * 2 + 1);
+                localu[6] = disp(indices[3] * 2);
+                localu[7] = disp(indices[3] * 2 + 1);
+                localu[8] = disp(indices[4] * 2);
+                localu[9] = disp(indices[4] * 2 + 1);
+                localu[10] = disp(indices[5] * 2);
+                localu[11] = disp(indices[5] * 2 + 1);
+                localu[12] = disp(indices[6] * 2);
+                localu[13] = disp(indices[6] * 2 + 1);
+                localu[14] = disp(indices[7] * 2);
+                localu[15] = disp(indices[7] * 2 + 1);
+                localu[16] = disp(indices[8] * 2);
+                localu[17] = disp(indices[8] * 2 + 1);
+
+                //This will be a 9x8 matrix, for the 9 basis functions and the 4 quadrature points
+                auto precomp = element.GradientsReferenceShapeFunctions(qr.Points());
+
+                //Jacobian Inverse Gramian will give a 2x8 matrix (2x2 for each of the quadrature points)
+                auto JinvT = geo_ptr->JacobianInverseGramian(qr.Points());
+
+                //Declare our matrix B, which we will reinitialize at every quadrature point
+                Eigen::Matrix<double, 3, 18> B;
+
+                //basis will contain the gradients of the basis functions on the cell transformed to the reference element
+                Eigen::Matrix<double, 2, 9> basis;
+
+                //Loop over all quadrature points
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    //Initialize our basis functions at this quadrature point, transformed to reference element
+                    basis << JinvT.block<2, 2>(0,2*i) * (precomp.block<9, 2>(0, 2*i)).transpose();
+
+                    //Initialize our matrix B depending on the basis matrix
+                    B << basis(0,0), 0.0, basis(0,1), 0.0, basis(0,2), 0.0,
+                    basis(0,3), 0.0, basis(0,4), 0.0, basis(0,5), 0.0,
+                    basis(0,6), 0.0, basis(0,7), 0.0, basis(0,8), 0.0,
+                    0.0, basis(1,0), 0.0, basis(1,1), 0.0, basis(1,2),
+                    0.0, basis(1,3), 0.0, basis(1,4), 0.0, basis(1,5),
+                    0.0, basis(1,6), 0.0, basis(1,7), 0.0, basis(1,8),
+                    basis(1,0), basis(0,0), basis(1,1), basis(0,1), basis(1,2), basis(0,2),
+                    basis(1,3), basis(0,3), basis(1,4), basis(0,4), basis(1,5), basis(0,5),
+                    basis(1,6), basis(0,6), basis(1,7), basis(0,7), basis(1,8), basis(0,8);
+
+                    strain.block<3, 1>(0, i) << B * localu;
+                    stress.block<3, 1>(0, i) << D * strain.block<3, 1>(0, i);
+                }
+
+                return std::tuple(stress, strain, geo_ptr->Global(qr.Points()));
+            }
+
+            default: {
+                LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
+            }
+        }
     }
 
 }

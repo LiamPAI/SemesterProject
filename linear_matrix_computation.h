@@ -12,9 +12,11 @@ namespace LinearMatrixComputation {
     class LinearFEElementMatrix {
 
     private:
-        //Young's modulus and nu are parameters we require for the computation of the stiffness matrix
+        //Young's modulus, nu, and D are parameters we require for the computation of the stiffness matrix
+        //D is either the plane-strain matrix or plane-stress matrix depending on the mesh
         const double youngmodulus {};
         const double nu {};
+        Eigen::Matrix<double, 3, 3> D;
 
     public:
         //The default constructor is not allowed, as the parameters (Young's modulus, and nu) are required
@@ -22,12 +24,34 @@ namespace LinearMatrixComputation {
         LinearFEElementMatrix() = delete;
 
         //Constructor I intend to use
-        LinearFEElementMatrix(double young, double nu) : youngmodulus {young}, nu {nu}
-        {}
+        LinearFEElementMatrix(double young, double nu, bool planeStrain) : youngmodulus {young}, nu {nu}
+        {
+            if (planeStrain) {
+                 //D is our plane strain matrix, which we initialize here
+                LF_ASSERT_MSG(std::abs(nu - 0.5) >= (0.0001), "Value of nu (0.5) will lead to a divide by zero");
+                D << (1 - nu), nu, 0.0,
+                    nu, (1- nu), 0.0,
+                    0.0, 0.0, (1 - 2 * nu) / 2.0;
+                D *= youngmodulus / ((1 + nu) * (1 - 2 * nu));
+            }
+            else
+                //Initialize D as a plane stress matrix
+                LF_ASSERT_MSG((std::abs(nu - 1.0) >= (0.0001)), "Value of nu (1.0) will lead to a divide by zero");
+                D << 1.0, nu, 0.0,
+                    nu, 1.0, 0.0,
+                    0.0, 0.0, (1 - nu) / 2.0;
+                D *= youngmodulus / (1 - nu * nu); {
+
+            }
+        }
 
         //The isActive and Eval function required to send to AssembleMatrixLocally later on
         bool isActive (const lf::mesh::Entity&) {return true;} //All cells will be integrated over
         Eigen::Matrix<double, 8, 8> Eval(const lf::mesh::Entity &cell);
+
+        //This method will be used for post-processing, taking in the displacement vector, and return matrices
+        //for the stress and strains at the element's respective nodes
+        std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
     };
 
 

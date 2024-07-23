@@ -17,8 +17,11 @@ namespace ParametricMatrixComputation {
     class ParametricFEElementMatrix {
 
     private:
+        //Declare our parameters for the calculation of the stiffness matrix, using Young's modulus, nu, and
+        //either the plane stress of plane strain matrix
         const double youngmodulus{};
         const double nu{};
+        Eigen::Matrix<double, 3, 3> D;
 
     public:
 
@@ -27,12 +30,34 @@ namespace ParametricMatrixComputation {
         ParametricFEElementMatrix() = delete;
 
         //Constructor I intend to use
-        ParametricFEElementMatrix(double young, double nu) : youngmodulus {young}, nu {nu}
-        {}
+        ParametricFEElementMatrix(double young, double nu, bool planeStrain) : youngmodulus {young}, nu {nu}
+        {
+            if (planeStrain) {
+                //D is our plane strain matrix, which we initialize here
+                LF_ASSERT_MSG(std::abs(nu - 0.5) >= (0.0001), "Value of nu (0.5) will lead to a divide by zero");
+                D << (1 - nu), nu, 0.0,
+                        nu, (1- nu), 0.0,
+                        0.0, 0.0, (1 - 2 * nu) / 2.0;
+                D *= youngmodulus / ((1 + nu) * (1 - 2 * nu));
+            }
+            else {
+                //Initialize D as a plane stress matrix
+                LF_ASSERT_MSG((std::abs(nu - 1.0) >= (0.0001)), "Value of nu (1.0) will lead to a divide by zero");
+                D << 1.0, nu, 0.0,
+                    nu, 1.0, 0.0,
+                    0.0, 0.0, (1 - nu) / 2.0;
+                D *= youngmodulus / (1 - nu * nu);
+            }
+        }
 
         //The isActive and Eval function required to send to AssembleMatrixLocally later on
         bool isActive (const lf::mesh::Entity&) {return true;} //All cells will be integrated over
-        Eigen::Matrix<double, 8, 8> Eval(const lf::mesh::Entity &cell);
+        Eigen::Matrix<double, 18, 18> Eval(const lf::mesh::Entity &cell);
+
+        //This method will be used for post-processing, taking in the displacement vector, and return matrices
+        //for the stress and strains at the element's respective nodes
+        //This method is virtually identical to the one in linear_matrix computation
+        std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
     };
 
     class ParametricFELoadVector {
@@ -79,7 +104,7 @@ namespace ParametricMatrixComputation {
 
         //Declaration for Eval, this should be able to take both cells and edges, hence the name entity
         //Has size up to 16 since we are now dealing with 8 nodes on a quadrilateral
-        Eigen::Vector<double, 8> Eval(const lf::mesh::Entity &entity);
+        Eigen::Vector<double, 18> Eval(const lf::mesh::Entity &entity);
     };
 }
 
