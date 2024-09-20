@@ -10,6 +10,8 @@
 #include <lf/uscalfe/uscalfe.h>
 #include <Eigen/Core>
 
+// TODO: test if LF_ASSERT wants true or false in order for the condition to be asserted
+
 //The following code can take in parametrized or non-parametrized triangles and quadrangles to compute the element
 //stiffness matrices and load vector on a given mesh
 namespace ParametricMatrixComputation {
@@ -265,7 +267,7 @@ namespace ParametricMatrixComputation {
     //points on the mesh (in this case the quadrature points)
     //The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature point, they are stored
     //as column _vectors
-    //TODO check that this is correctly implemented
+    // TODO: check that this is correctly implemented
     std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> ParametricFEElementMatrix::stressStrain
     (const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh) {
 
@@ -407,6 +409,66 @@ namespace ParametricMatrixComputation {
                 LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
             }
         }
+    }
+
+    // TODO: Test this method
+    // This method takes in a cell, the overall displacement vector for the mesh, and the Dofhandler and outputs the
+    // energy functional over that cell. Note that due to the parameters of the research problem, I do not include the
+    // capability of external forces or non-zero traction BCs, though this could be implemented using functionality
+    // found in other methods
+    // This function is identical to the one in linear_matrix_computation.cc, but it is implied the cell sent to this
+    // is of order 2
+    double ParametricFEElementMatrix::energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp,
+                                             const lf::assemble::DofHandler &dofh) {
+
+        // Obtain the cell type and geometry pointed
+        const lf::base::RefEl ref_el {cell.RefEl()};
+        const lf::geometry::Geometry *geo_ptr {cell.Geometry()};
+
+        // Call the stressStrain functions to obtain the stresses and strains for this cell
+        auto stressAndStrains = stressStrain(cell, disp, dofh);
+        auto stresses = std::get<0>(stressAndStrains);
+        auto strains = std::get<1>(stressAndStrains);
+
+        // Initialize the energy for this cell, which will later be summed up for quad rule
+        double energy = 0.0;
+
+        switch (ref_el) {
+
+            case lf::base::RefEl::kTria() : {
+                // Declare the quadrature rule for the element, note that this is the same
+                // quadrature rule as in the method stressStrain, which is essential, for tria type
+                lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
+
+                // Obtain the determinants at the quadrature points for easy summation
+                auto determinants = geo_ptr->IntegrationElement(qr.Points());
+
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    // Sum the energy for this quadrature point
+                    energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
+                }
+            }
+
+            case lf::base::RefEl::kQuad() : {
+                // Declare the quadrature rule for the element, note that this is the same
+                // quadrature rule as in the method stressStrain, which is essential, for quad type
+                lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
+
+                // Obtain the determinants at the quadrature points for easy summation
+                auto determinants = geo_ptr->IntegrationElement(qr.Points());
+
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    // Sum the energy for this quadrature point
+                    energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
+                }
+            }
+
+            default : {
+                LF_ASSERT_MSG(true, "Illegal cell type sent to stressStrain");
+            }
+
+        }
+        return energy;
     }
 
 }

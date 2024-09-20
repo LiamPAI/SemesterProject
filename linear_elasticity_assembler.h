@@ -7,7 +7,7 @@
 #include <lf/assemble/assemble.h>
 #include <lf/assemble/assemble_concepts.h>
 
-
+// TODO: This header file contains function implementations, very likely I need to move these to a .cc file
 namespace LinearElasticityAssembler {
 
     template<typename TMPMATRIX, lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>
@@ -102,6 +102,7 @@ namespace LinearElasticityAssembler {
         }
     }
 
+    // TODO: Consider adding a new function to linear_elasticity_assembler in order to sum up the energies (similar to pinnDataLoader)
 
     //This function intends to build all the matrices related to collocation points to train the PINN
     //This consists of reshaping the displacement vector to (2, num_nodes) where each column represents ux and uy

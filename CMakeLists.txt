@@ -39,7 +39,10 @@ add_executable(metal_foam_mesh
         linear_elasticity_assembler.h
         parametric_matrix_computation.h
         parametric_matrix_computation.cc
-        mesh_parametrization.h)
+        mesh_parametrization.h
+        mesh_parametrization.cc
+        graph_mesh.h
+        graph_mesh.cc line_mapping.h line_mapping.cc data_operations.h data_operations.cc)
 
 add_executable(neural_net
         pinn.cc

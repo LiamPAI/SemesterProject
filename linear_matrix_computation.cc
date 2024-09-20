@@ -199,10 +199,10 @@ namespace LinearMatrixComputation {
         return elem_vec;
     }
 
-    //This function implements post-processing to allow for the calculation of stresses and strains at various
-    //points on the mesh (in this case the quadrature points)
-    //The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature points, they are stored
-    //as column _vectors
+    // This function implements post-processing to allow for the calculation of stresses and strains at various
+    // points on the mesh (in this case the quadrature points)
+    // The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature points, they are stored
+    // as column _vectors
     std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> LinearFEElementMatrix::stressStrain
     (const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh) {
 
@@ -315,6 +315,65 @@ namespace LinearMatrixComputation {
                 LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
             }
         }
+    }
+
+    // TODO: Test this method
+    // This method takes in a cell, the overall displacement vector for the mesh, and the Dofhandler and outputs the
+    // energy functional over that cell. Note that due to the parameters of the research problem, I do not include the
+    // capability of external forces or non-zero traction BCs
+    // This function is identical to the one in parametric_matrix_computation.cc, but it is implied that the cell
+    // sent to this is of order 1
+    double LinearFEElementMatrix::energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp,
+                                             const lf::assemble::DofHandler &dofh) {
+
+        // Obtain the cell type and geometry pointed
+        const lf::base::RefEl ref_el {cell.RefEl()};
+        const lf::geometry::Geometry *geo_ptr {cell.Geometry()};
+
+        // Call the stressStrain functions to obtain the stresses and strains for this cell
+        auto stressAndStrains = stressStrain(cell, disp, dofh);
+        auto stresses = std::get<0>(stressAndStrains);
+        auto strains = std::get<1>(stressAndStrains);
+
+        // Initialize the energy for this cell, which will later be summed up for quad rule
+        double energy = 0.0;
+
+        switch (ref_el) {
+
+            case lf::base::RefEl::kTria() : {
+                // Declare the element type and quadrature rule for the element, note that this is the same
+                // quadrature rule as in the method stressStrain, which is essential, for tria type
+                lf::quad::QuadRule qr = lf::quad::make_TriaQR_P6O4();
+
+                // Obtain the determinants at the quadrature points for easy summation
+                auto determinants = geo_ptr->IntegrationElement(qr.Points());
+
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    // Sum the energy for this quadrature point
+                    energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
+                }
+            }
+
+            case lf::base::RefEl::kQuad() : {
+                // Declare the quadrature rule for the element, note that this is the same
+                // quadrature rule as in the method stressStrain, which is essential, for quad type
+                lf::quad::QuadRule qr = lf::quad::make_QuadQR_P4O4();
+
+                // Obtain the determinants at the quadrature points for easy summation
+                auto determinants = geo_ptr->IntegrationElement(qr.Points());
+
+                for (int i = 0; i < qr.NumPoints(); ++i) {
+                    // Sum the energy for this quadrature point
+                    energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
+                }
+            }
+
+            default : {
+                LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
+            }
+
+        }
+        return energy;
     }
 
 }

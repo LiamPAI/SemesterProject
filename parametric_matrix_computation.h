@@ -50,14 +50,19 @@ namespace ParametricMatrixComputation {
             }
         }
 
-        //The isActive and Eval function required to send to AssembleMatrixLocally later on
+        // The isActive and Eval function required to send to AssembleMatrixLocally later on
         bool isActive (const lf::mesh::Entity&) {return true;} //All cells will be integrated over
         Eigen::Matrix<double, 18, 18> Eval(const lf::mesh::Entity &cell);
 
-        //This method will be used for post-processing, taking in the displacement vector, and return matrices
-        //for the stress and strains at the element's respective nodes
-        //This method is virtually identical to the one in linear_matrix computation
+        // This method will be used for post-processing, taking in the displacement vector, and return matrices
+        // for the stress and strains at the element's respective nodes
+        // This method is virtually identical to the one in linear_matrix computation
         std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
+
+        // TODO: Implement this method
+        // The purpose of this method is to calculate the energy of a cell once we have obtained the displacement vector
+        // Note this method will use stressStrain as part of its calculation
+        double energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
     };
 
     class ParametricFELoadVector {
@@ -72,11 +77,15 @@ namespace ParametricMatrixComputation {
         //No default constructor, I want the bd_flags at least to be present when initialized
         ParametricFELoadVector() = delete;
 
+        //The case where we don't have traction, 0 Neumann condition, the rhs vector will be 0
+        ParametricFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags)
+        : bd_flags(std::move(bd_flags)), traction_{}, body_f{} {}
+
         //The case where there is traction but no body force
         ParametricFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags, std::function<Eigen::Vector2d (const Eigen::Vector2d &)> traction)
         : bd_flags(std::move(bd_flags)), traction_(std::move(traction)), body_f{} {}
 
-        //Complete constructor
+        //Complete constructor, when there is all three
         ParametricFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags, std::function<Eigen::Vector2d (const Eigen::Vector2d &)> traction,
                 std::function<Eigen::Vector2d (const Eigen::Vector2d &)> body)
         : bd_flags(std::move(bd_flags)), traction_(std::move(traction)), body_f(std::move(body)) {}

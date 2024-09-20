@@ -14,7 +14,10 @@
 #include "linear_elasticity_assembler.h"
 #include "parametric_matrix_computation.h"
 #include <gmsh.h>
+#include "graph_mesh.h"
 
+// TODO: Clean up this code, as it is the primary code I'd like to use for testing all functions
+// TODO: Write testing functions to ensure that all code in mesh_parametrization.cc is correct
 
 // This file contains various methods to ensure the correctness of linear_matrix_computation and parametric_matrix_computation
 
@@ -282,43 +285,49 @@ void test_mesh(std::string path, int degree) {
 
 }
 
-
-
 int main() {
 //    test_mesh("/meshes/test4.msh", 1);
 //    test_mesh("/meshes/test4.msh", 2);
-//    gmsh::initialize();
+
+    GraphMesh mesh;
+
+    try {
+
+         mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
+//         //Load the mesh from a file
+//         mesh.loadMeshFromFile("testNE2.geo");
 //
-//    try {
-//        // Creates a simple geometry
-//        gmsh::model::add("t1");
-//        double lc = 1e-2;
-//        gmsh::model::geo::addPoint(0, 0, 0, lc, 1);
-//        gmsh::model::geo::addPoint(.1, 0,  0, lc, 2);
-//        gmsh::model::geo::addPoint(.1, .3, 0, lc, 3);
-//        gmsh::model::geo::addPoint(0, .3, 0, lc, 4);
-//        gmsh::model::geo::addLine(1, 2, 1);
-//        gmsh::model::geo::addLine(3, 2, 2);
-//        gmsh::model::geo::addLine(3, 4, 3);
-//        gmsh::model::geo::addLine(4, 1, 4);
-//        gmsh::model::geo::addCurveLoop({4, 1, -2, 3}, 1);
-//        gmsh::model::geo::addPlaneSurface({1}, 1);
-//        gmsh::model::geo::synchronize();
-//        gmsh::model::mesh::generate(2);
-//        std::filesystem::path cwd = std::filesystem::current_path();
-//        std::string name = "t1.msh";
-//        std::filesystem::path output = cwd / "meshes" / name;
-//        gmsh::write(output.string());
-//    } catch (std::exception &e) {
-//        std::cout << "Error: " << e.what() << std::endl;
-//        gmsh::finalize();
-//        return 1;
-//    }
+//         //Build the graph structure from the loaded mesh
+//         mesh.buildGraphFromMesh();
 //
-//    gmsh::finalize();
-    std::cout << std::filesystem::current_path() << std::endl;
+//         //Print the entire mesh geometry
+//         mesh.printMeshGeometry();
+
+    }
+    catch (const std::exception& e) {
+        std::cerr << "An error occurred: " << e.what() << std::endl;
+        return 1;
+    }
 
     return 0;
 
-    //test_mesh("/meshes/test25.msh");
 }
+
+//    Eigen::Vector2d A(0, 0), B(std::sqrt(2), 0);  // Old line along x-axis
+//
+//    // Test with 45 degrees clockwise and counterclockwise rotations
+//    Eigen::Vector2d C1(-1, 1), D1(0, 0);  // 45 degrees counterclockwise
+//    Eigen::Vector2d C2(1, -1), D2(2, 0);  // 45 degrees clockwise
+//
+//    LineMapping mapping1(A, B, C1, D1);
+//    LineMapping mapping2(A, B, C2, D2);
+//
+//    // Test point
+//    Eigen::Vector2d testPoint(-1.41, 0);
+//
+//    Eigen::Vector2d mappedPoint1 = mapping1.mapPoint(testPoint);
+//    Eigen::Vector2d mappedPoint2 = mapping2.mapPoint(testPoint);
+//
+//    std::cout << "Original point: " << testPoint.transpose() << std::endl;
+//    std::cout << "Mapped point (45 deg CCW): " << mappedPoint1.transpose() << std::endl;
+//    std::cout << "Mapped point (45 deg CW): " << mappedPoint2.transpose() << std::endl;

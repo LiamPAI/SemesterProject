@@ -52,6 +52,11 @@ namespace LinearMatrixComputation {
         //This method will be used for post-processing, taking in the displacement vector, and return matrices
         //for the stress and strains at the element's respective nodes
         std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
+
+        // TODO: Implement this method
+        // The purpose of this method is to calculate the energy of a cell once we have obtained the displacement vector
+        // Note this method will use stressStrain as part of its calculation
+        double energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
     };
 
 
@@ -68,7 +73,7 @@ namespace LinearMatrixComputation {
         LinearFELoadVector() = delete;
 
         //I allow a constructor for the case where there is no body force or traction, in this case the implementation
-        //will just return a zero vector
+        //will just return a zero vector, which it should already be set to
         explicit LinearFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags)
         : bd_flags(std::move(bd_flags)), traction_{}, body_f{} {}
 
