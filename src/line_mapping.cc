@@ -2,7 +2,7 @@
 // Created by Liam Curtis on 2024-09-09.
 //
 
-#include "line_mapping.h"
+#include "../include/line_mapping.h"
 #include <cmath>
 
 // TODO: Comment all this code with viable descriptions

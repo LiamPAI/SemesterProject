@@ -1,0 +1,7 @@
+# macOS system files
+.DS_Store
+
+# JetBrains IDE
+.idea/
+
+cmake-build-debug/

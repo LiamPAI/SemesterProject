@@ -23,12 +23,14 @@
 // This is another struct I intend to use to represent the same information as a regular MeshParametrization, but it
 // simply contains the 6 points required to define this "part" of the mesh, or many more points if it is a node type
 // with more branches
+// TODO: Change this to reflect the fact that this should reflect displacement vectors
 // TODO: Consider putting asserts here to make sure that the entries and data we generate are valid
 // TODO: Decide on how to handle the ordering of the points so that for node parts it is easily identifiable
 //  which points coincide, either include a method here or implement it in polyPoints
 constexpr size_t NUM_TAGS = 4; // Amount of tags
 
 // Meaning behind each of the tags, they indicate the index we use within each entry
+// TODO: Change this to reflect the fact that only vectors are taken
 enum TagIndex {
     BASE = 0,
     BASE_ROTATION = 1,
@@ -47,6 +49,7 @@ struct ParametrizationPoints {
     }
 };
 
+// TODO: Change this to reflect the fact that we want displacement vectors
 // Instead of the parametrization, the actual polynomial points represented by the parametrization are used here, this
 // is for the purpose of testing both methods to see which works better when training the NN
 struct PointEntry {
@@ -63,9 +66,9 @@ struct PointEntry {
     PointEntry(int num, ParametrizationPoints p1, ParametrizationPoints p2, double eD, std::vector<int> tags)
         : numBranches(num), points1(std::move(p1)), points2(std::move(p2)), energyDifference(eD),
         tags(std::move(tags)) {}
-
 };
 
+// TODO: Change this to reflect the fact that we want displacement vectors
 // This data entry simply uses the mesh parametrizations as defined in mesh_parametrization.h
 struct ParametrizationEntry {
     int numBranches; // TODO: add this allowed num of branches to an assert

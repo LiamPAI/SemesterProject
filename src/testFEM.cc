@@ -10,11 +10,11 @@
 #include <filesystem>
 #include <memory>
 #include <typeinfo>
-#include "linear_matrix_computation.h"
-#include "linear_elasticity_assembler.h"
-#include "parametric_matrix_computation.h"
+#include "../include/linear_matrix_computation.h"
+#include "../include/linear_elasticity_assembler.h"
+#include "../include/parametric_matrix_computation.h"
 #include <gmsh.h>
-#include "graph_mesh.h"
+#include "../include/graph_mesh.h"
 
 // TODO: Clean up this code, as it is the primary code I'd like to use for testing all functions
 // TODO: Write testing functions to ensure that all code in mesh_parametrization.cc is correct

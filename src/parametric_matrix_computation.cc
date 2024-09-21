@@ -2,7 +2,7 @@
 // Created by Liam Curtis on 2024-05-06.
 //
 
-# include "parametric_matrix_computation.h"
+# include "../include/parametric_matrix_computation.h"
 
 #include <lf/base/base.h>
 #include <lf/geometry/geometry.h>

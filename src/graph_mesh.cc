@@ -2,7 +2,7 @@
 // Created by Liam Curtis on 2024-08-30.
 //
 
-#include "graph_mesh.h"
+#include "../include/graph_mesh.h"
 #include <gmsh.h>
 #include <iostream>
 

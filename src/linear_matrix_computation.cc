@@ -1,7 +1,7 @@
 //
 // Created by Liam Curtis on 2024-05-01.
 //
-#include "linear_matrix_computation.h"
+#include "../include/linear_matrix_computation.h"
 
 #include <lf/base/base.h>
 #include <lf/geometry/geometry.h>

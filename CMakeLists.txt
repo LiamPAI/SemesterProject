@@ -11,13 +11,8 @@ HunterGate(
 project(MetalFoams)
 
 # Find GMSH
-find_path(GMSH_INCLUDE_DIR gmsh.h
-        PATHS /usr/local/include
-        )
-find_library(GMSH_LIBRARY
-        NAMES gmsh
-        PATHS /usr/local/lib
-        )
+find_path(GMSH_INCLUDE_DIR gmsh.h PATHS /usr/local/include)
+find_library(GMSH_LIBRARY NAMES gmsh PATHS /usr/local/lib)
 
 # download dependencies
 hunter_add_package(Eigen)
@@ -28,31 +23,26 @@ find_package(lehrfempp CONFIG REQUIRED)
 
 hunter_add_package(ZLIB)
 
-#set(CPPFLAGS="-I/opt/homebrew/opt/zlib/include")
-#set(CMAKE_PREFIX_PATH "/Users/liamcurtis/Documents/ETH Classes/Winter 2024/Semester Project/zlib-1.3.1")
-find_package(Torch REQUIRED)
- 
-# define executables
-add_executable(metal_foam_mesh
-        testFEM.cc
-        linear_matrix_computation.cc
-        linear_elasticity_assembler.h
-        parametric_matrix_computation.h
-        parametric_matrix_computation.cc
-        mesh_parametrization.h
-        mesh_parametrization.cc
-        graph_mesh.h
-        graph_mesh.cc line_mapping.h line_mapping.cc data_operations.h data_operations.cc)
+# find_package(Torch REQUIRED) new comment
 
-add_executable(neural_net
-        pinn.cc
-        mesh.h
-        linear_matrix_computation.cc
-        linear_elasticity_assembler.h
-        parametric_matrix_computation.h
-        parametric_matrix_computation.cc)
+# Collect all source files
+set(SOURCES
+        src/testFEM.cc
+        src/graph_mesh.cc
+        src/linear_matrix_computation.cc
+        src/parametric_matrix_computation.cc
+        src/data_operations.cc
+        src/line_mapping.cc
+        src/mesh_parametrization.cc
+)
 
-target_include_directories(metal_foam_mesh PRIVATE ${GMSH_INCLUDE_DIR})
+# Define executable
+add_executable(metal_foam_mesh ${SOURCES})
+
+# Include Directories
+target_include_directories(metal_foam_mesh PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${GMSH_INCLUDE_DIR})
 
 target_link_libraries(metal_foam_mesh PRIVATE
         ${GMSH_LIBRARY}
@@ -67,15 +57,39 @@ target_link_libraries(metal_foam_mesh PRIVATE
         LF::lf.uscalfe
         )
 
-target_link_libraries(neural_net PRIVATE ${TORCH_LIBRARIES}
-        LF::lf.base
-        LF::lf.assemble
-        LF::lf.fe
-        LF::lf.geometry
-        LF::lf.io
-        LF::lf.mesh
-        LF::lf.quad
-        LF::lf.refinement
-        LF::lf.uscalfe
-        )
-target_include_directories(neural_net PRIVATE ${EIGEN3_INCLUDE_DIRS})
+#add_executable(metal_foam_mesh
+#        src/testFEM.cc
+#        src/linear_matrix_computation.cc
+#        include/linear_elasticity_assembler.h
+#        include/parametric_matrix_computation.h
+#        src/parametric_matrix_computation.cc
+#        include/mesh_parametrization.h
+#        src/mesh_parametrization.cc
+#        include/graph_mesh.h
+#        src/graph_mesh.cc
+#        include/line_mapping.h
+#        src/line_mapping.cc
+#        include/data_operations.h
+#        src/data_operations.cc)
+
+#add_executable(neural_net
+#        include/mesh.h
+#        src/linear_matrix_computation.cc
+#        include/linear_elasticity_assembler.h
+#        include/parametric_matrix_computation.h
+#        src/parametric_matrix_computation.cc)
+
+# target_include_directories(metal_foam_mesh PRIVATE ${GMSH_INCLUDE_DIR})
+
+#target_link_libraries(neural_net PRIVATE ${TORCH_LIBRARIES}
+#        LF::lf.base
+#        LF::lf.assemble
+#        LF::lf.fe
+#        LF::lf.geometry
+#        LF::lf.io
+#        LF::lf.mesh
+#        LF::lf.quad
+#        LF::lf.refinement
+#        LF::lf.uscalfe
+#        )
+#target_include_directories(neural_net PRIVATE ${EIGEN3_INCLUDE_DIRS})

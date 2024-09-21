@@ -2,7 +2,7 @@
 // Created by Liam Curtis on 2024-09-09.
 //
 
-#include "mesh_parametrization.h"
+#include "../include/mesh_parametrization.h"
 
 // TODO: fix comments to be more descriptive so any first-time reader can easily understand
 // TODO: think about how displacement BCs are related to how the middle terminal will change, and how to incorporate this correctly with training data
@@ -303,6 +303,7 @@ bool MeshParametrization::intersectionBranches(Eigen::MatrixXd &poly_points, int
 // TODO: Rethink this implementation knowing how we can now use splines for the sides of an edge, and the main thing to
 //  check is if a "part" is in the linear elastic region or not
 // TODO: make sure of simple things as well, such as non-negative widths
+// TODO: Change this to reflect the fact that widths could be a matrix
 bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &width, Eigen::MatrixXd &terminal, Eigen::MatrixXd &vector) {
     // TODO: In the 1 branch case, I just need to make sure that this does not fold over itself
     // TODO: In the 1 branch case, I also need to make sure there is not an insane curvature, which I can check through
@@ -464,6 +465,7 @@ bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &wid
 // numbering convention
 // TODO: Test this method
 // TODO: Possibly delete this method, as it may not be needed at all given my map method in generateMesh
+// TODO: Possibly change this to reflect the fact that widths could change
 Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &multiBranch) {
     // Declare useful help variables
     bool check = false;
@@ -606,7 +608,7 @@ Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &m
     return connections;
 }
 
-// TODO: Test this tolerance by making sure the strings actually end up equal
+// TODO: Test this tolerance by making sure the strings actualy end up equal
 std::string MeshParametrization::getPointKey(double x, double y, double z, double tolerance = 1e-6) {
     return std::to_string(std::round(x / tolerance)) + "_" +
            std::to_string(std::round(y / tolerance)) + "_" +
@@ -617,6 +619,7 @@ std::string MeshParametrization::getPointKey(double x, double y, double z, doubl
 // this will allow for the calculation of the energy difference between close by parametrizations
 // TODO: test this function
 // TODO: very likely I will reset the gmsh model I am using so that this doesn't add points on the model we already opened
+// TODO: Change this to reflect the fact that widths would be a matrix
 void MeshParametrization::generateMesh(MeshParametrizationData &parametrization, const std::string &mesh_name) {
     Eigen::MatrixXd poly_points = polynomialPoints(parametrization.widths, parametrization.terminals,
                                                    parametrization.vectors);
@@ -782,7 +785,7 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
 // TODO: test this function, and also test the functions in LineMapping that I'm using
 // TODO: make sure this function works given that both the terminal and vector may have changed position
 // TODO: maybe add assert messages to ensure that the branches have the correct size
-// TODO: Perhaps update this to also be able to provide displacement BCs on the sides of edges (could be a different method)
+// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
 // The purpose of this function is to take the coordinates of two branches and return the displacement BC for a point
 // on one of the lines of that mesh
 Eigen::Vector2d MeshParametrization::displacementBC (Eigen::MatrixXd firstBranch, Eigen::MatrixXd secondBranch, Eigen::Vector2d point) {
@@ -889,6 +892,7 @@ void MeshParametrization::fixFlaggedSolutionComponentsLE (std::vector<std::pair<
 }
 
 // TODO: Implement this function
+// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
 bool MeshParametrization::elasticRegion(MeshParametrizationData &first, MeshParametrizationData &second) {
     // This function should check if the second parametrization is within the linear elastic region of the first
     // You may want to use the displacementEnergy function and set a threshold for the maximum allowed displacement
@@ -901,6 +905,7 @@ bool MeshParametrization::elasticRegion(MeshParametrizationData &first, MeshPara
 // TODO: Decide on increasing the signature of the function in order to have extra parameters for accuracy of the calculation
 // TODO: Also decide on if I should add a string so I know where to store the mesh
 // TODO: Change the signature of this function to accept the necessary parameters such as E, nu, yield point
+// TODO: Change this function to reflect the fact that we just want displacement vectors
 std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizationData &first, MeshParametrizationData &second) {
     // Generate the mesh we want to perform a FEM calculation on
     generateMesh(first, "energy1");

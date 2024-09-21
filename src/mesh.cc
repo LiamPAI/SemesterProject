@@ -9,9 +9,9 @@
 #include <filesystem>
 #include <memory>
 #include <typeinfo>
-#include "linear_matrix_computation.h"
-#include "linear_elasticity_assembler.h"
-#include "parametric_matrix_computation.h"
+#include "../include/linear_matrix_computation.h"
+#include "../include/linear_elasticity_assembler.h"
+#include "../include/parametric_matrix_computation.h"
 
 std::vector<long> dist0nodes;
 
@@ -354,8 +354,8 @@ void test_mesh(std::string path) {
     //False in our constructor means we are doing a plane-stress calculation
     LinearMatrixComputation::LinearFEElementMatrix assemble {E, v, false};
     ParametricMatrixComputation::ParametricFEElementMatrix assemblePar{E, v, false};
-    LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemble);
-    LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemblePar);
+//  LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemble);
+//  LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemblePar);
 
 }
 

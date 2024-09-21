@@ -2,7 +2,7 @@
 // Created by Liam Curtis on 2024-09-12.
 //
 
-#include "data_operations.h"
+#include "../include/data_operations.h"
 
 // The following methods will contain the implementations of the methods declared in data_operations.h, their purpose
 // is to build the datasets for the NN to be trained later
@@ -354,6 +354,7 @@ std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> DataOperations::ge
 
 // TODO: test this function
 // TODO: Change this function to reflect the fact that widths could be a matrix
+// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
 MeshParametrizationData DataOperations::perturbSingleBranchParametrization(const MeshParametrizationData &base_param,
                                                            PerturbationGenerators &param_gens) {
     // Declare matrices that will hold the data for our new parametrization
@@ -391,6 +392,7 @@ MeshParametrizationData DataOperations::perturbSingleBranchParametrization(const
 // TODO: Change this function to reflect the fact that widths could be a matrix (current width implementation is incorrect)
 // TODO: Think of a clever way to perturb the center, since due to our current constraints I only perturb the
 //  2nd and 3rd terminals of each branch
+// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
 MeshParametrizationData DataOperations::perturbMultiBranchParametrization(const MeshParametrizationData &base_param,
                                                           PerturbationGenerators &param_gens) {
     // Declare matrices that will hold the data for our new parametrization
@@ -796,6 +798,7 @@ ParametrizationPoints DataOperations::loadParametrizationPoints(std::ifstream &f
 
 // TODO: test this function
 // TODO: Change this implementation of this function once I know widths will be a matrix
+// TODO: Change this to retrieve/store the data in the data folder once files are restructured
 // This function takes in a DataSet, identifies whether it's filled with Parametrization entries or Point entries,
 // and saves the corresponding structure into a binary file for later use with a given file name
 void DataOperations::saveDataSet(const DataSet &data_set, const std::string &file_name) {
@@ -849,6 +852,7 @@ void DataOperations::saveDataSet(const DataSet &data_set, const std::string &fil
 
 // TODO: test this function
 // TODO: Change this implementation of this function once I know widths will be a matrix
+// TODO: Change this to retrieve/store the data in the data folder once files are restructured
 // This function is given a file name, identifies whether it contains Parametrization entires or Point entires,
 // and returns the corresponding dataset
 DataSet DataOperations::loadDataSet(const std::string &file_name) {
