@@ -79,7 +79,7 @@ namespace MeshParametrization {
     void angleVectors(int numBranch, Eigen::MatrixXd& poly_points);
     void intersectionVectors(int numBranch, Eigen::MatrixXd& poly_points);
     bool intersectionBranches(Eigen::MatrixXd& poly_points, int first, int second);
-    bool meshParamValidator(const int num, Eigen::VectorXd& width, Eigen::MatrixXd &terminal, Eigen::MatrixXd &vector);
+    bool meshParamValidator(MeshParametrizationData &param);
     std::pair<bool, double> displacementEnergy(MeshParametrizationData &first, MeshParametrizationData &second);
 
     //TODO: Change the signature of this function to work off of displacement energy

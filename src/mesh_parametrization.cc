@@ -304,30 +304,30 @@ bool MeshParametrization::intersectionBranches(Eigen::MatrixXd &poly_points, int
 //  check is if a "part" is in the linear elastic region or not
 // TODO: make sure of simple things as well, such as non-negative widths
 // TODO: Change this to reflect the fact that widths could be a matrix
-bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &width, Eigen::MatrixXd &terminal, Eigen::MatrixXd &vector) {
+bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
     // TODO: In the 1 branch case, I just need to make sure that this does not fold over itself
     // TODO: In the 1 branch case, I also need to make sure there is not an insane curvature, which I can check through
     //  vector orientations, I believe I don't want the concavity to change before we reach the point
     // TODO: Consider making a mini-method that does this just for the 1-branch case, so that the multi-branch case
     //  can call it multiple times
-    if (num == 1) {
+    if (param.numBranches == 1) {
         // Note: the calls to these functions will throw an exception if the parametrization is invalid and
         // will also print the reason behind the exception
-        normalizeVectors(vector);
-        Eigen::MatrixXd poly_points = polynomialPoints(width, terminal, vector);
-        angleVectors(num, poly_points);
-        intersectionVectors(num, poly_points);
+        normalizeVectors(param.vectors);
+        Eigen::MatrixXd poly_points = polynomialPoints(param);
+        angleVectors(param.numBranches, poly_points);
+        intersectionVectors(param.numBranches, poly_points);
     }
         // TODO In the 3+ branch case, I need to create an algorithm that makes sure that all branches meet up at the center,
         //  and that their widths/vectors allow a center
         // TODO: I also need to check all the individual branches as in num == 1 case
         // TODO: I also need to make sure that the branches don't overlap with each other, e.g. the centers point outwards
         //  and that branches don't touch their neighbouring branches (how to check the second part)
-    else if (num >= 3) {
+    else if (param.numBranches >= 3) {
         // Declare parameters that will be useful for validating the parametrization
         double eps = 1e-7;
-        normalizeVectors(vector);
-        Eigen::MatrixXd poly_points = polynomialPoints(width, terminal, vector);
+        normalizeVectors(param.vectors);
+        Eigen::MatrixXd poly_points = polynomialPoints(param);
 
         // topoMapping is a mapping of (branch #, top/bot, own side) -> (branch connection #, top/bot, connec side)
         // , the purpose is to quickly find the points that match in a 3+ branch case
@@ -337,12 +337,12 @@ bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &wid
         Tuple3i next;
 
         // Call angleVectors and intersection vectors to make sure there is not high curvature of the branches
-        angleVectors(num, poly_points);
-        intersectionVectors(num, poly_points);
+        angleVectors(param.numBranches, poly_points);
+        intersectionVectors(param.numBranches, poly_points);
 
         // Iterate through branches to find a point that is equal to our first point
         for (int attempt = 0; attempt < 2; attempt ++) {
-            for (int branch = 1; branch < num; branch++) {
+            for (int branch = 1; branch < param.numBranches; branch++) {
                 pairs(0) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 0)).norm();
                 pairs(1) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch + 2, 0)).norm();
                 pairs(2) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 2)).norm();
@@ -380,7 +380,7 @@ bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &wid
         LF_ASSERT_MSG(!check, "Have not found a point that matches another point in a 3+ branch param");
 
         // Now we have found points that match, we continue the loop for the remaining points
-        for (int point = 1; point < num; ++point) {
+        for (int point = 1; point < param.numBranches; ++point) {
             bool overall_check = false;
             check = false;
             int cur_branch = std::get<0>(next);
@@ -388,7 +388,7 @@ bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &wid
             int side = std::get<2>(next) == 0 ? 0 : 1;
 
             // We have next point to check on all branches, so we should loop through all branches except for our own
-            for (int branch = 0; branch < num; ++branch) {
+            for (int branch = 0; branch < param.numBranches; ++branch) {
                 // Skip over branch if it's our current one
                 if (cur_branch == branch) {
                     continue;
@@ -444,8 +444,8 @@ bool MeshParametrization::meshParamValidator(const int num, Eigen::VectorXd &wid
         //  this case is actually handled by just checking for intersecting lines
         // TODO: To check for intersection lines, decide whether to send to a mini method between two branches
 
-        for (int i = 0; i < num; ++i) {
-            for (int j = i; j < num; ++j) {
+        for (int i = 0; i < param.numBranches; ++i) {
+            for (int j = i; j < param.numBranches; ++j) {
                 if(!intersectionBranches(poly_points, i, j)) {
                     std::cout << "Branches " << i << " and " << j << "of the following polynomial points overlap: \n"
                               << poly_points << std::endl;
@@ -475,8 +475,7 @@ Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &m
 
     // TODO: I'm assuming here that we already have a correct parametrization, need to ensure
     //  this before calling generateMesh
-    Eigen::MatrixXd poly_points = polynomialPoints(multiBranch.widths, multiBranch.terminals,
-                                                   multiBranch.vectors);
+    Eigen::MatrixXd poly_points = polynomialPoints(multiBranch);
     int num = multiBranch.numBranches;
     Eigen::MatrixXd connections(num, 2);
 
@@ -621,8 +620,7 @@ std::string MeshParametrization::getPointKey(double x, double y, double z, doubl
 // TODO: very likely I will reset the gmsh model I am using so that this doesn't add points on the model we already opened
 // TODO: Change this to reflect the fact that widths would be a matrix
 void MeshParametrization::generateMesh(MeshParametrizationData &parametrization, const std::string &mesh_name) {
-    Eigen::MatrixXd poly_points = polynomialPoints(parametrization.widths, parametrization.terminals,
-                                                   parametrization.vectors);
+    Eigen::MatrixXd poly_points = polynomialPoints(parametrization);
 
     // TODO: Decide if I want to add a model name when initializing a mesh here
     // I'm choosing not to add a model name due to possible repeats, only initializing gmsh
@@ -920,8 +918,8 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     auto fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO2<double>>(mesh_ptr);
 
     // Obtain the polynomial points for both parametrizations to build the dirichlet conditions
-    auto poly_points_first = polynomialPoints(first.widths, first.terminals, first.vectors);
-    auto poly_points_second = polynomialPoints(second.widths, second.terminals, second.vectors);
+    auto poly_points_first = polynomialPoints(first);
+    auto poly_points_second = polynomialPoints(second);
 
     const lf::assemble::DofHandler &dofh {fe_space->LocGlobMap()};
     const lf::uscalfe::size_type N_dofs {dofh.NumDofs()};

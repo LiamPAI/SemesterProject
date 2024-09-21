@@ -10,6 +10,8 @@ HunterGate(
 ### Setup CMake Project ###
 project(MetalFoams)
 
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
 # Find GMSH
 find_path(GMSH_INCLUDE_DIR gmsh.h PATHS /usr/local/include)
 find_library(GMSH_LIBRARY NAMES gmsh PATHS /usr/local/lib)
@@ -22,8 +24,6 @@ hunter_add_package(lehrfempp)
 find_package(lehrfempp CONFIG REQUIRED)
 
 hunter_add_package(ZLIB)
-
-# find_package(Torch REQUIRED) new comment
 
 # Collect all source files
 set(SOURCES
@@ -57,39 +57,6 @@ target_link_libraries(metal_foam_mesh PRIVATE
         LF::lf.uscalfe
         )
 
-#add_executable(metal_foam_mesh
-#        src/testFEM.cc
-#        src/linear_matrix_computation.cc
-#        include/linear_elasticity_assembler.h
-#        include/parametric_matrix_computation.h
-#        src/parametric_matrix_computation.cc
-#        include/mesh_parametrization.h
-#        src/mesh_parametrization.cc
-#        include/graph_mesh.h
-#        src/graph_mesh.cc
-#        include/line_mapping.h
-#        src/line_mapping.cc
-#        include/data_operations.h
-#        src/data_operations.cc)
-
-#add_executable(neural_net
-#        include/mesh.h
-#        src/linear_matrix_computation.cc
-#        include/linear_elasticity_assembler.h
-#        include/parametric_matrix_computation.h
-#        src/parametric_matrix_computation.cc)
-
-# target_include_directories(metal_foam_mesh PRIVATE ${GMSH_INCLUDE_DIR})
-
-#target_link_libraries(neural_net PRIVATE ${TORCH_LIBRARIES}
-#        LF::lf.base
-#        LF::lf.assemble
-#        LF::lf.fe
-#        LF::lf.geometry
-#        LF::lf.io
-#        LF::lf.mesh
-#        LF::lf.quad
-#        LF::lf.refinement
-#        LF::lf.uscalfe
-#        )
-#target_include_directories(neural_net PRIVATE ${EIGEN3_INCLUDE_DIRS})
+#file(COPY ${CMAKE_SOURCE_DIR}/python DESTINATION ${CMAKE_BINARY_DIR})
+file(GLOB PYTHON_SCRIPTS "python/*.py")
+file(COPY ${PYTHON_SCRIPTS} DESTINATION ${CMAKE_BINARY_DIR}/python)

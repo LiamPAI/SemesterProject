@@ -15,6 +15,8 @@
 
 std::vector<long> dist0nodes;
 
+// TODO: Once testFEM is properly set up, delete this file, it is no longer needed
+
 //This method uses sol_vec and dist0nodes to build the full solution vector, which will include the prescribed
 //displacement BCs
 Eigen::VectorXd adjustDisplacementVector (Eigen::VectorXd sol_vec, unsigned int N_dofs) {

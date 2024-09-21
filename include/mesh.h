@@ -16,6 +16,8 @@
 #include "linear_elasticity_assembler.h"
 #include "parametric_matrix_computation.h"
 
+// TODO: Once testFEM is properly set up, delete this file, it is no longer needed
+
 // This file include various methods to aid in solving the linear elasticity problem on various meshes
 // As such, the primary functionality is to take in a mesh, given by a path string,
 // and return the corresponding solution vector for that mesh

@@ -60,7 +60,7 @@ int GraphMesh::extractId(const std::string& name) {
 void GraphMesh::loadMeshFromFile(const std::string& filename) {
     try {
         const std::filesystem::path here = __FILE__;
-        auto working_dir = here.parent_path();
+        auto working_dir = here.parent_path().parent_path();
         gmsh::open(working_dir / "meshes" / filename);
         //gmsh::model::setCurrent("testNE2");  // Use the name without .msh extension
 
