@@ -48,10 +48,10 @@ using Tuple3i = std::tuple<int, int, int>;
 // TODO: Refactor this code so that the meshparamdata is easily alterable on its own
 // TODO: Consider calling meshParamValidator when initializing a MeshParametrizationData object
 struct MeshParametrizationData {
-    int numBranches;
+    int numBranches{};
     //TODO: Consider making _widths an alterable parameter, and let the compatibility conditions make sure the
     // remaining "constraints", such as with nodes, hold up, this might change the structure of widths to a matrix
-    Eigen::VectorXd widths;
+    Eigen::MatrixXd widths;
     Eigen::MatrixXd terminals;
     Eigen::MatrixXd vectors;
 
@@ -59,41 +59,38 @@ struct MeshParametrizationData {
     MeshParametrizationData() = default;
 
     // TODO: Perhaps include a few asserts to make sure that the shapes of all these matrices make sense
-    MeshParametrizationData(int num, Eigen::VectorXd w, Eigen::MatrixXd t, Eigen::MatrixXd v)
+    MeshParametrizationData(int num, Eigen::MatrixXd w, Eigen::MatrixXd t, Eigen::MatrixXd v)
             : numBranches(num), widths(std::move(w)), terminals(std::move(t)), vectors(std::move(v)) {
         // TODO: Might need to change this if widths ends up changing
-        LF_ASSERT_MSG(num == w.size(),
+        LF_ASSERT_MSG(num == widths.rows(),
                       "Number of branches is not equal to the amount of _widths given in MeshParam");
-        LF_ASSERT_MSG(t.rows() / 2 == num and t.cols() == 3,
+        LF_ASSERT_MSG(terminals.rows() / 2 == num and terminals.cols() == 3,
                       "Size of _terminals is invalid in MeshParam");
-        LF_ASSERT_MSG(v.rows() / 2 == num and v.cols() == 3, "Size of _vectors is invalid in MeshParam");
+        LF_ASSERT_MSG(vectors.rows() / 2 == num and vectors.cols() == 3, "Size of _vectors is invalid in MeshParam");
     }
 };
 
 namespace MeshParametrization {
-
-    std::string getPointKey(double x, double y, double z, double tolerance);
 
     void normalizeVectors(Eigen::MatrixXd& vectors);
     Eigen::MatrixXd polynomialPoints(MeshParametrizationData &param);
     void angleVectors(int numBranch, Eigen::MatrixXd& poly_points);
     void intersectionVectors(int numBranch, Eigen::MatrixXd& poly_points);
     bool intersectionBranches(Eigen::MatrixXd& poly_points, int first, int second);
-    bool meshParamValidator(MeshParametrizationData &param);
-    std::pair<bool, double> displacementEnergy(MeshParametrizationData &first, MeshParametrizationData &second);
-
-    //TODO: Change the signature of this function to work off of displacement energy
-    bool elasticRegion(MeshParametrizationData &first, MeshParametrizationData &second);
-
     Eigen::MatrixXd connectionPoints(MeshParametrizationData &multiBranch);
+
+    bool meshParamValidator(MeshParametrizationData &param);
+
+    std::string getPointKey(double x, double y, double z, double tolerance);
     void generateMesh(MeshParametrizationData &parametrization, const std::string& mesh_name);
 
-    Eigen::Vector2d displacementBC(Eigen::MatrixXd firstBranch, Eigen::MatrixXd secondBranch, Eigen::Vector2d point);
-
+    Eigen::Vector2d displacementBC(Eigen::MatrixXd branch, Eigen::MatrixXd displacement, Eigen::Vector2d point);
     void fixFlaggedSolutionComponentsLE(std::vector<std::pair<bool, Eigen::Vector2d>>& selectvals,
                                         lf::assemble::COOMatrix<double>& A, Eigen::Matrix<double, Eigen::Dynamic, 1>& phi);
 
-    // TODO: Decide if this actually has to be private or not, likely not imo
+    //TODO: Change the signature of this function to work off of displacement energy
+    bool elasticRegion(MeshParametrizationData &first, Eigen::MatrixXd &displacement);
+    std::pair<bool, double> displacementEnergy(MeshParametrizationData &first, Eigen::MatrixXd &displacement);
 
 };
 

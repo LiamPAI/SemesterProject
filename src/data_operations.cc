@@ -54,6 +54,7 @@ std::vector<int> DataOperations::sampleWithoutReplacement(int min, int max, int 
 // TODO: test this function
 // TODO: this function currently doesn't return every single possible combination, it is more of a heuristic,
 //  decide later if that is ok or if I want to change that
+// TODO: Adjust this function since ParametrizationEntry has now changed
 // The purpose of this function is to flip the vectors given within a ParametrizationEntry and return the corresponding
 // dataset, the total potential number of flips is 2^((3 + 3) * numBranches) since there are two parametrizations per
 // entry, so we use a flip probability and a linear scaling factor so that the number of expected flipped vectors is
@@ -75,8 +76,7 @@ ParametrizationDataSet DataOperations::flipVectorEntry(ParametrizationEntry &par
         // Obtain the indices to flip by converting the sampled number to binary
         auto flip_indices = numberToBoolVector(sample, 3);
         bool flipped = false;
-        Eigen::VectorXd new_vector1(param.param1.vectors);
-        Eigen::VectorXd new_vector2(param.param2.vectors);
+        Eigen::VectorXd new_vectors(param.param.vectors);
 
         for (int i = 0; i < param.numBranches; ++i) {
             // With probability flip_probability, we decide if we flip the vectors of this branch of this
@@ -86,29 +86,18 @@ ParametrizationDataSet DataOperations::flipVectorEntry(ParametrizationEntry &par
                 flipped = true;
                 for (int j = 0; j < 3; ++j) {
                     if (flip_indices[j]) {
-                        new_vector1(2 * i, j) = -new_vector1(2 * i, j);
-                        new_vector1(2 * i + 1, j) = -new_vector1(2 * i + 1, j);
-                    }
-                }
-            }
-            // Flip vectors for branch i of param2
-            if (probability(rng) < flip_params.first) {
-                flipped = true;
-                for (int j = 0; j < 3; ++j) {
-                    if (flip_indices[j]) {
-                        new_vector2(2 * i, j) = -new_vector2(2 * i, j);
-                        new_vector2(2 * i + 1, j) = -new_vector2(2 * i + 1, j);
+                        new_vectors(2 * i, j) = -new_vectors(2 * i, j);
+                        new_vectors(2 * i + 1, j) = -new_vectors(2 * i + 1, j);
                     }
                 }
             }
         }
         // If we flipped vectors, we add the flipped ParametrizationEntry to the data_set
         if (flipped) {
-            MeshParametrizationData new_param1 {param.numBranches, param.param1.widths,
-                                                param.param1.terminals, new_vector1};
-            MeshParametrizationData new_param2 {param.numBranches, param.param2.widths,
-                                                param.param2.terminals, new_vector2};
-            flipped_data_set.emplace_back(param.numBranches, new_param1, new_param2, param.energyDifference);
+            MeshParametrizationData new_param {param.numBranches, param.param.widths,
+                                                param.param.terminals, new_vectors};
+            flipped_data_set.emplace_back(param.numBranches, new_param,
+                                          param.displacements, param.energyDifference);
         }
     }
     return flipped_data_set;
@@ -172,8 +161,6 @@ Eigen::Vector2d DataOperations::rotatePoint(const Eigen::Vector2d& point, const 
 }
 
 // TODO: test this function
-// TODO: IDEA: Perhaps randomize the method by which we find the center for further robustness (may not be needed if
-//  I continue to rotate "perturbed" parametrizations) (don't think this is needed considering convex polygon assumption)
 // The purpose of this function is to return the "center" point of a parametrization, so that we have a reference point
 // with which to rotate our parametrizations. In the 1-branch case, I simply return the middle terminal. In the
 // multi-branch case, I return the geometric centroid, assuming a convex polygon
@@ -202,6 +189,7 @@ Eigen::Vector2d DataOperations::findCenter(MeshParametrizationData &params) {
 
 // TODO: test this function with both single and multi branch parametrizations (which I think it will by design)
 // TODO: make sure this function returns the base parametrization only if the rotation_params demand it
+// TODO: Fix this function, as the vectors of a parametrization are currently not rotating with it
 // The purpose of the following function is to rotate a parametrization given certain rotation parameters (rotation
 // granularity, and an additional random proportion) and a return a vector of all these rotated parametrizations,
 // note additionally that the original parametrization will also be included in the return vector due to the
@@ -242,46 +230,61 @@ std::vector<MeshParametrizationData> DataOperations::rotateParametrization(MeshP
 // TODO: test this function
 // TODO: make sure this function returns the base parametrization only if the rotation_params demand it
 // This function has the exact same functionality as rotateParametrization but does it for type ParametrizationEntry,
-// where both parametrizations within this entry are rotated to an equal amount, and the energy is kept the same,
-// this helps for the NN to be rotation-invariant
-ParametrizationDataSet DataOperations::rotateParametrizationEntry(ParametrizationEntry &param,
+// where both parametrizations and the vector of displacements are rotated an equal amount, and the energy is kept
+// the same. This helps for the NN to be rotation-invariant
+ParametrizationDataSet DataOperations::rotateParametrizationEntry(ParametrizationEntry &param_entry,
                                                                   std::pair<double, double> &rotation_params) {
     ParametrizationDataSet rotated_data_set;
 
     // Initialize angles vector and find the center point of the first parametrization
     std::vector<double> angles = generateRotationAngles(rotation_params.first, rotation_params.second);
-    Eigen::Vector2d center = findCenter(param.param1);
+    Eigen::Vector2d center = findCenter(param_entry.param);
+    Eigen::Vector2d origin;
+    origin.setZero();
 
-    // Iterate through all angles and rotate the param according to that angle
+    // Iterate through all angles and rotate the param_entry according to that angle
     for (double angle : angles) {
-        Eigen::MatrixXd rotated_terminals1 (param.param1.terminals.rows(), param.param1.terminals.cols());
-        Eigen::MatrixXd rotated_terminals2 (param.param2.terminals.rows(), param.param2.terminals.cols());
-        rotated_terminals1.setZero();
-        rotated_terminals2.setZero();
+        // Declare the new matrices for this rotated parametrization
+        Eigen::MatrixXd rotated_terminals(param_entry.param.terminals.rows(), param_entry.param.terminals.cols());
+        Eigen::MatrixXd rotated_vectors(param_entry.param.vectors.rows(), param_entry.param.vectors.cols());
+        rotated_terminals.setZero();
+        rotated_vectors.setZero();
 
-        // Iterate through all branches and rotate each terminal of that branch
-        for (int j = 0; j < param.numBranches; ++j) {
-            rotated_terminals1.block<2, 1>(2 * j, 0) =
-                    rotatePoint(param.param1.terminals.block<2, 1>(2 * j, 0), center, angle);
-            rotated_terminals1.block<2, 1>(2 * j, 1) =
-                    rotatePoint(param.param1.terminals.block<2, 1>(2 * j, 1), center, angle);
-            rotated_terminals1.block<2, 1>(2 * j, 2) =
-                    rotatePoint(param.param1.terminals.block<2, 1>(2 * j, 2), center, angle);
-            rotated_terminals2.block<2, 1>(2 * j, 0) =
-                    rotatePoint(param.param2.terminals.block<2, 1>(2 * j, 0), center, angle);
-            rotated_terminals2.block<2, 1>(2 * j, 1) =
-                    rotatePoint(param.param2.terminals.block<2, 1>(2 * j, 1), center, angle);
-            rotated_terminals2.block<2, 1>(2 * j, 2) =
-                    rotatePoint(param.param2.terminals.block<2, 1>(2 * j, 2), center, angle);
+        // Iterate through all branches and rotate each terminal and vector of that branch
+        for (int j = 0; j < param_entry.numBranches; ++j) {
+            rotated_terminals.block<2, 1>(2 * j, 0) =
+                    rotatePoint(param_entry.param.terminals.block<2, 1>(2 * j, 0), center, angle);
+            rotated_terminals.block<2, 1>(2 * j, 1) =
+                    rotatePoint(param_entry.param.terminals.block<2, 1>(2 * j, 1), center, angle);
+            rotated_terminals.block<2, 1>(2 * j, 2) =
+                    rotatePoint(param_entry.param.terminals.block<2, 1>(2 * j, 2), center, angle);
+
+            rotated_vectors.block<2, 1>(2 * j, 0) =
+                    rotatePoint(param_entry.param.vectors.block<2, 1>(2 * j, 0), origin, angle);
+            rotated_vectors.block<2, 1>(2 * j, 1) =
+                    rotatePoint(param_entry.param.vectors.block<2, 1>(2 * j, 1), origin, angle);
+            rotated_vectors.block<2, 1>(2 * j, 2) =
+                    rotatePoint(param_entry.param.vectors.block<2, 1>(2 * j, 2), origin, angle);
         }
 
-        // TODO: Double check that with std::move this constructor doesn't mess up my original parametrization
+        // Declare the new matrix for the displacement vectors
+        Eigen::MatrixXd rotated_displacements(param_entry.displacements.rows(), param_entry.displacements.cols());
+        rotated_displacements.setZero();
+
+        // Iterate through the displacement vectors and rotate them
+        for (int i = 0; i < param_entry.displacements.rows() / 2; ++i) {
+            for (int j = 0; j < param_entry.displacements.cols(); ++j) {
+                rotated_displacements.block<2, 1>(2 * i, j) =
+                        rotatePoint(param_entry.displacements.block<2, 1>(2 * i, j), origin, angle);
+            }
+        }
+
         // Add new parametrization to our vector
-        MeshParametrizationData new_param1 {param.numBranches, Eigen::VectorXd(param.param1.widths),
-                                            rotated_terminals1, Eigen::VectorXd(param.param1.vectors)};
-        MeshParametrizationData new_param2 {param.numBranches, Eigen::VectorXd(param.param2.widths),
-                                            rotated_terminals2, Eigen::VectorXd(param.param2.vectors)};
-        rotated_data_set.emplace_back(param.numBranches, new_param1, new_param2, param.energyDifference);
+        MeshParametrizationData new_param {param_entry.numBranches, Eigen::MatrixXd(param_entry.param.widths),
+                                            rotated_terminals, rotated_vectors};
+
+        rotated_data_set.emplace_back(param_entry.numBranches, new_param,
+                                      rotated_displacements, param_entry.energyDifference);
     }
     return rotated_data_set;
 
@@ -353,80 +356,57 @@ std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> DataOperations::ge
 }
 
 // TODO: test this function
-// TODO: Change this function to reflect the fact that widths could be a matrix
-// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
-MeshParametrizationData DataOperations::perturbSingleBranchParametrization(const MeshParametrizationData &base_param,
-                                                           PerturbationGenerators &param_gens) {
-    // Declare matrices that will hold the data for our new parametrization
-    Eigen::VectorXd new_widths (base_param.widths);
-    Eigen::MatrixXd new_terminals (base_param.terminals);
-    Eigen::MatrixXd new_vectors (base_param.vectors);
+// This function takes in a single-branch parametrization and returns a matrix of displacement vectors to perturb it
+// according to our perturbation parameters
+Eigen::MatrixXd DataOperations::singleBranchDisplacements(PerturbationGenerators &param_gens) {
+    // Declare matrix that will hold our displacement vectors
+    Eigen::MatrixXd displacements(4, 2);
+    displacements.setZero();
 
-    // Iterate through the 3 terminals and perturb the widths, terminals, and vectors according to
-    // our perturb probability
-    for (int i = 0; i < 3; ++i) {
-        // TODO: Change the following code once we change widths to type matrix (right now there will be an out of range error)
-        // Perturb the width with probability perturbProbability
+    // Iterate through the 4 corners of this branch and generate displacement vectors
+    for (int i = 0; i < 4; ++i) {
+
+        // Add a displacement boundary condition with probability perturbProbability for each coordinate
         if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-            new_widths(i) *= (1.0 + param_gens.widthDistributions[0](param_gens.rng));
+            displacements(i % 2, i / 2) += param_gens.displacementPerturb(param_gens.rng)
+                    * param_gens.maxDistances[0];
         }
 
-        // Perturb the terminals with probability perturbProbability
         if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-            new_terminals(0, i) += param_gens.terminalDistributions[0](param_gens.rng);
-            new_terminals(1, i) += param_gens.terminalDistributions[0](param_gens.rng);
-        }
-
-        // Perturb the vectors with probability perturbProbability
-        if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-            double current_angle = std::atan2(base_param.vectors(1, i), base_param.vectors(0, i));
-            current_angle += param_gens.vectorDistributions[0](param_gens.rng);
-            new_vectors.col(i) << std::cos(current_angle), std::sin(current_angle);
+            displacements(i % 2 + 1, i / 2) += param_gens.displacementPerturb(param_gens.rng)
+                    * param_gens.maxDistances[0];
         }
     }
-    // Return perturbed MeshParametrizationData
-    return {1, new_widths, new_terminals, new_vectors};
+
+    // Return the ordered displacement vectors
+    return displacements;
 }
 
 // TODO: test this function
-// TODO: Change this function to reflect the fact that widths could be a matrix (current width implementation is incorrect)
-// TODO: Think of a clever way to perturb the center, since due to our current constraints I only perturb the
-//  2nd and 3rd terminals of each branch
 // TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
-MeshParametrizationData DataOperations::perturbMultiBranchParametrization(const MeshParametrizationData &base_param,
-                                                          PerturbationGenerators &param_gens) {
-    // Declare matrices that will hold the data for our new parametrization
-    Eigen::VectorXd new_widths (base_param.widths);
-    Eigen::MatrixXd new_terminals (base_param.terminals);
-    Eigen::MatrixXd new_vectors (base_param.vectors);
+// This function takes in a multi-branch parametrization and returns a matrix of displacement vectors to perturb it
+// according to our perturbation parameters
+Eigen::MatrixXd DataOperations::multiBranchDisplacements(int num, PerturbationGenerators &param_gens) {
+    // Declare matrix that will hold our displacement vectors
+    Eigen::MatrixXd displacements(num * 4, 1);
+    displacements.setZero();
 
-    // Iterate through all branches to perturb them one at a time
-    for (int i = 0; i < base_param.numBranches; ++i) {
-        // Iterate through the 3 terminals and perturb the widths, terminals, and vectors according to our
-        // perturb probability, but skip the first of these since they are in the center
-        for (int j = 1; j < 3; ++j) {
-            // TODO: Change the following code once we change widths to type matrix (right now there will be an out of range error)
-            // Perturb the width with probability perturbProbability
-            if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-                new_widths(i) *= (1.0 + param_gens.widthDistributions[i](param_gens.rng));
-            }
+    // Iterate through all branches to add displacement boundary conditions one at a time
+    for (int i = 0; i < num; ++i) {
 
-            // Perturb the terminals with probability perturbProbability
-            if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-                new_terminals(2 * i, j) += param_gens.terminalDistributions[i](param_gens.rng);
-                new_terminals(2 * i + 1, j) += param_gens.terminalDistributions[i](param_gens.rng);
-            }
+        // Iterate through the 2 points for which we'll have displacement BCs (4 total with 2D x and y)
+        for (int j = 0; j < 4; ++j) {
 
-            // Perturb the vectors with probability perturbProbability
+            // There can only be displacement BCs at the ends of each branch, the remaining sides have Neumann BCs
             if (param_gens.uniformPerturb(param_gens.rng) < param_gens.perturbProbability) {
-                double current_angle = std::atan2(base_param.vectors(2 * i + 1, j), base_param.vectors(2 * i, j));
-                current_angle += param_gens.vectorDistributions[i](param_gens.rng);
-                new_vectors.block<2, 1>(2 * i, j) << std::cos(current_angle), std::sin(current_angle);
+                displacements(4 * i + j, 0) += param_gens.displacementPerturb(param_gens.rng)
+                                           * param_gens.maxDistances[i];
             }
         }
     }
-    // Return perturbed MeshParametrizationData
-    return {base_param.numBranches, new_widths, new_terminals, new_vectors};
+
+    // Return the ordered displacement vectors
+    return displacements;
 }
 
 // TODO: test this function
@@ -438,95 +418,66 @@ MeshParametrizationData DataOperations::perturbMultiBranchParametrization(const 
 // are all within the linear elastic region of the material
 ParametrizationDataSet DataOperations::generatePerturbedParametrizations(MeshParametrizationData &base_param,
                                                                        PerturbationParams &params) {
-    // Declare normal distributions vectors that will be sent to the individual perturb functions
-    std::vector<std::normal_distribution<>> width_distributions;
-    std::vector<std::normal_distribution<>> terminal_distributions;
-    std::vector<std::normal_distribution<>> vector_distributions;
+    // Declare vector of max distances, which will be the variance when generating displacements
+    std::vector<double> max_distances;
     ParametrizationDataSet perturbed_entries;
 
     if (base_param.numBranches == 1) {
-        // The following calculations are heuristics I am using to determine the "amount" by which we want to perturb
 
-        // Obtain the std deviation we'll be using to modify the width
-        double yield_strain = params.yieldStrength / params.modulusOfElasticity;
-        double width_std_dev = params.percentYieldStrain * yield_strain;
-
-        // Obtain the std deviation we'll be using to modify the terminal locations
-        // TODO: modify this when widths becomes a matrix
-        double average_width = base_param.widths.mean();
-        double terminal_std_dev = params.percentTerminal * average_width;
+        // Use the following heuristic to determine the maximum allowable strain for calculating displacement vectors
+        double max_stress = params.percentYieldStrength * params.yieldStrength;
+        double max_strain = max_stress / params.modulusOfElasticity;
 
         // Obtain the std deviation we'll be using when rotating the vectors
-        // TODO: Modify this heuristic if needed after testing
+        // TODO: Modify this heuristic if needed after testing, i.e. consider using the width over the length, since
+        //  the width will be significantly smaller
         double approx_length = (base_param.terminals.col(1) - base_param.terminals.col(0)).norm() +
                 (base_param.terminals.col(2) - base_param.terminals.col(1)).norm();
-        double aspect_ratio = approx_length / average_width;
-        double vector_std_dev = std::min(params.maxRotationAngle,
-                                         params.rotationFactor * aspect_ratio * std::sqrt(yield_strain));
 
-        // Add these normal distributions to the vector for the perturbations
-        width_distributions.emplace_back(0.0, width_std_dev);
-        terminal_distributions.emplace_back(0.0, terminal_std_dev);
-        vector_distributions.emplace_back(0.0, vector_std_dev);
+        max_distances.emplace_back(approx_length * max_strain);
 
-        PerturbationGenerators perturb_params = {params.perturbProbability, width_distributions,
-                                                 terminal_distributions, vector_distributions, params.rng};
+        PerturbationGenerators perturb_params = {params.perturbProbability, max_distances, params.rng};
 
         // Keep adding data entries until we reach our desired size for this base_param
         // TODO: Implement something to prevent an infinite loop here, and perhaps add a print statement for testing purposes
         while (perturbed_entries.size() < params.numPerturbations) {
-            auto new_param = perturbSingleBranchParametrization(base_param, perturb_params);
+            auto displacements = singleBranchDisplacements(perturb_params);
 
-            // TODO: Note that this function call is highly subject to change to be more modular, change is necessary
-            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, new_param);
+            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, displacements);
 
             if (energy_check.first) {
-                perturbed_entries.emplace_back(1, base_param, new_param, energy_check.second);
+                perturbed_entries.emplace_back(1, base_param, displacements, energy_check.second);
             }
         }
     }
 
+    // Same as in the single branch case, but slightly modified to handle multiple branches
     else if (base_param.numBranches >= 3) {
-        // The following calculations are heuristics identical to the single branch case, but with "versions" for
-        // each branch, since they may be of different length and width
 
-        // Obtain the std deviation we'll be using to modify the width
-        double yield_strain = params.yieldStrength / params.modulusOfElasticity;
-        double width_std_dev = params.percentYieldStrain * yield_strain;
+        // Same calculation as in the single branch case, calculate a maximum allowable strain heuristic
+        // for displacement vectors
+        double max_stress = params.percentYieldStrength * params.yieldStrength;
+        double max_strain = max_stress / params.modulusOfElasticity;
 
         for (int i = 0; i < base_param.numBranches; ++i) {
-            // Obtain the std deviation we'll be using to modify the terminal locations
-            // TODO: modify this when widths becomes a matrix
-            double average_width = base_param.widths.mean();
-            double terminal_std_dev = params.percentTerminal * average_width;
-
-            // Obtain the std deviation we'll be using when rotating the vectors
+            // Obtain the length and use this to find the maximum allowable distance for this branch
             // TODO: Modify this heuristic if needed after testing
             double approx_length = (base_param.terminals.block<2, 1>(2 * i, 1) - base_param.terminals.block<2, 1>(2 * i, 0)).norm() +
                                    (base_param.terminals.block<2, 1>(2 * i, 2) - base_param.terminals.block<2, 1>(2 * i, 1)).norm();
-            double aspect_ratio = approx_length / average_width;
-            double vector_std_dev = std::min(params.maxRotationAngle,
-                                             params.rotationFactor * aspect_ratio * std::sqrt(yield_strain));
-
-            // Add these normal distributions to the vector for the perturbations
-            width_distributions.emplace_back(0.0, width_std_dev);
-            terminal_distributions.emplace_back(0.0, terminal_std_dev);
-            vector_distributions.emplace_back(0.0, vector_std_dev);
+            max_distances.emplace_back(approx_length * max_strain);
         }
 
-        PerturbationGenerators perturb_params = {params.perturbProbability, width_distributions,
-                                                 terminal_distributions, vector_distributions, params.rng};
+        PerturbationGenerators perturb_params = {params.perturbProbability, max_distances, params.rng};
 
         // Keep adding data entries until we reach our desired size for this base_param
         // TODO: Implement something to prevent an infinite loop here, and perhaps add a print statement for testing purposes
         while (perturbed_entries.size() < params.numPerturbations) {
-            auto new_param = perturbMultiBranchParametrization(base_param, perturb_params);
+            auto displacements = multiBranchDisplacements(base_param.numBranches, perturb_params);
 
-            // TODO: Note that this function call is highly subject to change to be more modular, change is necessary
-            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, new_param);
+            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, displacements);
 
             if (energy_check.first) {
-                perturbed_entries.emplace_back(1, base_param, new_param, energy_check.second);
+                perturbed_entries.emplace_back(1, base_param, displacements, energy_check.second);
             }
         }
     }
@@ -539,7 +490,6 @@ ParametrizationDataSet DataOperations::generatePerturbedParametrizations(MeshPar
     return perturbed_entries;
 }
 
-// TODO: Once I change widths to type matrix, modify the implementation of this function to reflect the change
 // TODO: test this function
 // The purpose of this function is to take the number of branches, a width, and a length, and output a base
 // parametrization to add to the dataset. The base parametrization is a straight horizontal branch in this case
@@ -547,12 +497,12 @@ MeshParametrizationData DataOperations::generateSingleBranchParametrization(int 
 
     if (num == 1) {
         // Declare necessary matrices to initialize a parametrization
-        Eigen::VectorXd widths(0);
+        Eigen::MatrixXd widths(1, 3);
         Eigen::MatrixXd terminals(2, 3);
         Eigen::MatrixXd vectors (2, 3);
 
         // Initialize necessary matrices with a non-varying width, length exactly as expected, and all vectors pointing up
-        widths << width;
+        widths << width, width, width;
         terminals << -length / 2, 0.0, length / 2, 0.0, 0.0, 0.0;
         vectors << 1.0, 1.0, 1.0, 0.0, 0.0, 0.0;
 
@@ -565,9 +515,6 @@ MeshParametrizationData DataOperations::generateSingleBranchParametrization(int 
 
 }
 
-
-// TODO: Once I change widths to type matrix, modify the implementation of this function to reflect the change, or
-//  at least make it easily adaptable once we change the type to matrix
 // TODO: test this function
 // The purpose of this function is to take the number of branches, a vector of widths, a vector of lengths, and output
 // a base multi-branch parametrization to add to the dataset. The branch will likely be modified afterwards. The base
@@ -576,10 +523,9 @@ MeshParametrizationData DataOperations::generateMultiBranchParametrization(int n
                                                                            Eigen::VectorXd &lengths) {
     if (num >= 3) {
         // Declare matrices that will take part in the final parametrization
-        // TODO: Change the following few lines once widths has been updated to a matrix
         Eigen::MatrixXd terminals(num * 2, 3);
         Eigen::MatrixXd vectors(num * 2, 3);
-        Eigen::VectorXd new_widths (widths);
+        Eigen::MatrixXd new_widths = widths.replicate(1, 3);
 
         // The following is a tuple containing the midpoints, unit outward pointing vectors, and unit side vectors
         auto midpoints_and_vectors = generateMidPointsAndVectors(widths);
@@ -605,13 +551,9 @@ MeshParametrizationData DataOperations::generateMultiBranchParametrization(int n
 }
 
 // TODO: test this function
-// TODO: Decide how I want to incorporate the multi-branch case, as I'm only doing single branches for now
-//  if doing the multi-branch case, the amount of vectors to "flip" adds up exponentially, how to deal with this? perhaps
-//  just selectively flip a few given a parameter from 0 to 1?
 // TODO: IDEA: If it leaves the linear elastic region, make the energy difference high such that the NN wants to avoid it
-// TODO: IDEA: Provide a "tag" to type of data (e.g. the same parametrization but rotated/flipped) to later use to see
-//  how the NN performs on it since it's essentially the exact same parametrization
 // TODO: Consider adding print statements (perhaps with a bool of verbose) to see where we are within the parametrization generation process
+// TODO: Find a way to perturb the widths of the base parametrizations, otherwise they will likely always be constant
 // The purpose of this function is to generate an entire data set full of the "MeshParametrizationData" type using the
 // parameters given in params and the corresponding GenerationParams struct
 ParametrizationDataSet DataOperations::generateParametrizationDataSet(GenerationParams &params) {
@@ -706,7 +648,6 @@ ParametrizationDataSet DataOperations::generateParametrizationDataSet(Generation
 }
 
 // TODO: test this function
-// TODO: Consider whether this function should take advantage of the tag system that I want to implement for the data
 // TODO: for testing purposes, perhaps have a counter of the number of time we see a tag twice
 // This function takes in a parametrization data set and converts it into a point data set using the functionality
 // in polynomialPoints. Since the point parametrization doesn't depend on vector orientations, if the vector flip tag
@@ -724,11 +665,10 @@ PointDataSet DataOperations::parametrizationToPoint(ParametrizationDataSet &para
         if (seen_tags.find(param_entry.tags[TagIndex::FLIP_VECTOR]) == seen_tags.end()) {
 
             // Use polynomialPoints to convert each parametrization correctly then add to the data set
-            ParametrizationPoints points1{param_entry.numBranches,
-                                          MeshParametrization::polynomialPoints(param_entry.param1)};
-            ParametrizationPoints points2{param_entry.numBranches,
-                                          MeshParametrization::polynomialPoints(param_entry.param2)};
-            data_set.emplace_back(param_entry.numBranches, points1, points2, param_entry.energyDifference);
+            ParametrizationPoints points{param_entry.numBranches,
+                                          MeshParametrization::polynomialPoints(param_entry.param)};
+            data_set.emplace_back(param_entry.numBranches, points,
+                                  param_entry.displacements, param_entry.energyDifference);
 
             // Add this tag to our set of seen tags since this is new
             seen_tags.insert(param_entry.tags[TagIndex::FLIP_VECTOR]);
@@ -738,13 +678,12 @@ PointDataSet DataOperations::parametrizationToPoint(ParametrizationDataSet &para
 }
 
 // TODO: test this function
-// TODO: Change this implementation of this function once I know widths will be a matrix
 // This function takes in a file and MeshParametrizationData object and saves the object to the file
 void DataOperations::saveMeshParametrizationData(std::ofstream &file, const MeshParametrizationData &param) {
     file.write(reinterpret_cast<const char*>(&param.numBranches), sizeof(int));
 
     // Save widths, current shape is numBranches
-    file.write(reinterpret_cast<const char*>(param.widths.data()), param.numBranches * sizeof(double));
+    file.write(reinterpret_cast<const char*>(param.widths.data()), 3 * param.numBranches * sizeof(double));
 
     // Save terminals, current shape will be (2 * numBranches) by 3
     file.write(reinterpret_cast<const char*>(param.terminals.data()), 6 * param.numBranches * sizeof(double));
@@ -754,14 +693,13 @@ void DataOperations::saveMeshParametrizationData(std::ofstream &file, const Mesh
 }
 
 // TODO: test this function
-// TODO: Change this implementation of this function once I know widths will be a matrix
 // This function takes in a file we're reading to return a MeshParametrization object
 MeshParametrizationData DataOperations::loadMeshParametrizationData(std::ifstream &file) {
     int numBranches;
     file.read(reinterpret_cast<char*>(&numBranches), sizeof(int));
 
-    Eigen::VectorXd widths(numBranches);
-    file.read(reinterpret_cast<char*>(widths.data()), numBranches * sizeof(double));
+    Eigen::MatrixXd widths(numBranches, 3);
+    file.read(reinterpret_cast<char*>(widths.data()), 3 * numBranches * sizeof(double));
 
     // Load the points into the matrix
     Eigen::MatrixXd terminals(2 * numBranches, 3);
@@ -797,7 +735,6 @@ ParametrizationPoints DataOperations::loadParametrizationPoints(std::ifstream &f
 }
 
 // TODO: test this function
-// TODO: Change this implementation of this function once I know widths will be a matrix
 // TODO: Change this to retrieve/store the data in the data folder once files are restructured
 // This function takes in a DataSet, identifies whether it's filled with Parametrization entries or Point entries,
 // and saves the corresponding structure into a binary file for later use with a given file name
@@ -825,8 +762,12 @@ void DataOperations::saveDataSet(const DataSet &data_set, const std::string &fil
         // Iterate through each entry and save it
         for (const auto &entry : param_data_set) {
             file.write(reinterpret_cast<const char*>(&entry.numBranches), sizeof(int));
-            saveMeshParametrizationData(file, entry.param1);
-            saveMeshParametrizationData(file, entry.param2);
+            saveMeshParametrizationData(file, entry.param);
+
+            // Calculate number of values used in the displacement matrix
+            int num_displacements = entry.numBranches == 1 ? 8 : 4 * entry.numBranches;
+            file.write(reinterpret_cast<const char *>(&entry.displacements), num_displacements * sizeof(double));
+
             file.write(reinterpret_cast<const char*>(&entry.energyDifference), sizeof(double));
             file.write(reinterpret_cast<const char*>(entry.tags.data()), NUM_TAGS * sizeof(int));
         }
@@ -842,8 +783,12 @@ void DataOperations::saveDataSet(const DataSet &data_set, const std::string &fil
         // Iterate through each entry and save it
         for (const auto &entry : point_data_set) {
             file.write(reinterpret_cast<const char*>(&entry.numBranches), sizeof(int));
-            saveParametrizationPoints(file, entry.points1);
-            saveParametrizationPoints(file, entry.points2);
+            saveParametrizationPoints(file, entry.points);
+
+            // Calculate number of values used in the displacement matrix
+            int num_displacements = entry.numBranches == 1 ? 8 : 4 * entry.numBranches;
+            file.write(reinterpret_cast<const char *>(&entry.displacements), num_displacements * sizeof(double));
+
             file.write(reinterpret_cast<const char*>(&entry.energyDifference), sizeof(double));
             file.write(reinterpret_cast<const char*>(entry.tags.data()), NUM_TAGS * sizeof(int));
         }
@@ -851,7 +796,6 @@ void DataOperations::saveDataSet(const DataSet &data_set, const std::string &fil
 }
 
 // TODO: test this function
-// TODO: Change this implementation of this function once I know widths will be a matrix
 // TODO: Change this to retrieve/store the data in the data folder once files are restructured
 // This function is given a file name, identifies whether it contains Parametrization entires or Point entires,
 // and returns the corresponding dataset
@@ -867,23 +811,27 @@ DataSet DataOperations::loadDataSet(const std::string &file_name) {
     file.read(reinterpret_cast<char*>(&type), sizeof(DataSetType));
 
     if (type == DataSetType::Parametrization) {
+
         // Obtain the size of this data set
         ParametrizationDataSet data_set;
         size_t size;
         file.read(reinterpret_cast<char*>(&size), sizeof(size_t));
 
-        // Iterate through all entries given the size we just acquired
+        // Iterate through all entries given the size we just acquired, and load each field of the entry
         for (size_t i= 0; i < size; i++) {
             int num_branches;
             file.read(reinterpret_cast<char*>(&num_branches), sizeof(int));
 
-            MeshParametrizationData param1 = loadMeshParametrizationData(file);
-            MeshParametrizationData param2 = loadMeshParametrizationData(file);
+            MeshParametrizationData param = loadMeshParametrizationData(file);
+
+            int num_cols = num_branches == 1 ? 2 : 1;
+            Eigen::MatrixXd displacements(4 * num_branches, num_cols);
+            file.read(reinterpret_cast<char*>(&displacements), 4 * num_branches * num_cols * sizeof(double));
 
             double energy_diff;
             file.read(reinterpret_cast<char*>(&energy_diff), sizeof(double));
 
-            ParametrizationEntry entry(num_branches, std::move(param1), std::move(param2), energy_diff);
+            ParametrizationEntry entry(num_branches, std::move(param), std::move(displacements), energy_diff);
 
             file.read(reinterpret_cast<char*>(entry.tags.data()), NUM_TAGS * sizeof(int));
 
@@ -893,6 +841,7 @@ DataSet DataOperations::loadDataSet(const std::string &file_name) {
     }
 
     else {
+
         // Obtain the size of this data set
         PointDataSet data_set;
         size_t size;
@@ -903,13 +852,16 @@ DataSet DataOperations::loadDataSet(const std::string &file_name) {
             int num_branches;
             file.read(reinterpret_cast<char*>(&num_branches), sizeof(int));
 
-            ParametrizationPoints points1 = loadParametrizationPoints(file);
-            ParametrizationPoints points2 = loadParametrizationPoints(file);
+            ParametrizationPoints points = loadParametrizationPoints(file);
+
+            int num_cols = num_branches == 1 ? 2 : 1;
+            Eigen::MatrixXd displacements(4 * num_branches, num_cols);
+            file.read(reinterpret_cast<char*>(&displacements), 4 * num_branches * num_cols * sizeof(double));
 
             double energy_diff;
             file.read(reinterpret_cast<char*>(&energy_diff), sizeof(double));
 
-            PointEntry entry(num_branches, std::move(points1), std::move(points2), energy_diff);
+            PointEntry entry(num_branches, std::move(points), std::move(displacements), energy_diff);
 
             file.read(reinterpret_cast<char*>(entry.tags.data()), NUM_TAGS * sizeof(int));
 

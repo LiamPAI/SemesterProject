@@ -38,6 +38,7 @@ enum TagIndex {
     FLIP_VECTOR = 3,
 };
 
+// TODO: Decide if I want to include asserts in this constructor
 struct ParametrizationPoints {
     int numBranches;
     Eigen::MatrixXd points;
@@ -50,35 +51,39 @@ struct ParametrizationPoints {
 };
 
 // TODO: Change this to reflect the fact that we want displacement vectors
+// TODO: Decide if I want to include asserts in these constructors
 // Instead of the parametrization, the actual polynomial points represented by the parametrization are used here, this
 // is for the purpose of testing both methods to see which works better when training the NN
 struct PointEntry {
     int numBranches;
-    ParametrizationPoints points1;
-    ParametrizationPoints points2;
+    ParametrizationPoints points;
+    Eigen::MatrixXd displacements;
     double energyDifference;
     std::vector<int> tags;
 
-    PointEntry(int num, ParametrizationPoints p1, ParametrizationPoints p2, double eD)
-        : numBranches(num), points1(std::move(p1)), points2(std::move(p2)), energyDifference(eD), tags(NUM_TAGS, -1) {}
+    PointEntry(int num, ParametrizationPoints p, Eigen::MatrixXd disp, double eD)
+        : numBranches(num), points(std::move(p)), displacements(std::move(disp)), energyDifference(eD),
+        tags(NUM_TAGS, -1) {}
 
 
-    PointEntry(int num, ParametrizationPoints p1, ParametrizationPoints p2, double eD, std::vector<int> tags)
-        : numBranches(num), points1(std::move(p1)), points2(std::move(p2)), energyDifference(eD),
+    PointEntry(int num, ParametrizationPoints p, Eigen::MatrixXd disp, double eD, std::vector<int> tags)
+        : numBranches(num), points(std::move(p)), displacements(std::move(disp)), energyDifference(eD),
         tags(std::move(tags)) {}
 };
 
 // TODO: Change this to reflect the fact that we want displacement vectors
+// TODO: Decide if I want to include asserts in these constructors
 // This data entry simply uses the mesh parametrizations as defined in mesh_parametrization.h
 struct ParametrizationEntry {
-    int numBranches; // TODO: add this allowed num of branches to an assert
-    MeshParametrizationData param1;
-    MeshParametrizationData param2;
+    int numBranches;
+    MeshParametrizationData param;
+    Eigen::MatrixXd displacements;
     double energyDifference;
     std::vector<int> tags;
 
-    ParametrizationEntry(int num, MeshParametrizationData p1, MeshParametrizationData p2, double eD)
-        : numBranches(num), param1(std::move(p1)), param2(std::move(p2)), energyDifference(eD), tags(NUM_TAGS, -1) {}
+    ParametrizationEntry(int num, MeshParametrizationData p, Eigen::MatrixXd disp, double eD)
+        : numBranches(num), param(std::move(p)), displacements(std::move(disp)), energyDifference(eD),
+        tags(NUM_TAGS, -1) {}
 
 };
 
@@ -96,6 +101,7 @@ enum class DataSetType {
 using DataSet = std::variant<ParametrizationDataSet, PointDataSet>;
 
 // TODO: Consider making some of these parameters within a certain range (e.g. flip probability between 0 and 1) in constructor
+// TODO: Change this to reflect the fact that we want displacement vectors
 struct GenerationParams {
     int datasetSize;
     int numBranches;
@@ -108,18 +114,15 @@ struct GenerationParams {
     double poissonRatio;
     double yieldStrength;
     int numPerturbations;
-    double percentYieldStrain;
-    double percentTerminal;
-    double maxRotationAngle; // In radians
-    double rotationFactor;
-    double perturbProbability;
+    double percentYieldStrength; // TODO: This will change since we are now using displacement vectors to perturb
+    double perturbProbability; // TODO: This will change since we are now using displacement vectors to perturb
     unsigned seed;
     std::mt19937 rng;
 
     GenerationParams(int size, int numB, std::pair<double, double> lenInterval, std::pair<double, double> widthInterval,
                      std::pair<double, int> flipP, std::pair<double, double> baseRotP,
                      std::pair<double, double> dataRotP, double modulus, double poisson, double yield, int numPer,
-                     double perYield, double perTerm, double maxAng, double rotFac, double perProb,
+                     double perStrength, double perProb,
                      unsigned s = std::chrono::system_clock::now().time_since_epoch().count())
             : datasetSize(size),
             numBranches(numB),
@@ -132,10 +135,7 @@ struct GenerationParams {
             poissonRatio(poisson),
             yieldStrength(yield),
             numPerturbations(numPer),
-            percentYieldStrain(perYield),
-            percentTerminal(perTerm),
-            maxRotationAngle(maxAng),
-            rotationFactor(rotFac),
+            percentYieldStrength(perStrength),
             perturbProbability(perProb),
             seed(s),
             rng(seed) {}
@@ -143,15 +143,13 @@ struct GenerationParams {
 
 // TODO: Update the structure of this and the GenerationParams if I decide the change the heuristics to use for perturbations
 // TODO: Decide if these should be part of GenerationParams, which I think they should be
-// The following struct are parameters used to perturb the parametrizations, and is a subset of GenerationParams
+// TODO: Change this to reflect the fact that we want displacement vectors
+// The following struct includes parameters used to perturb the parametrizations, and is a subset of GenerationParams
 struct PerturbationParams {
     int numPerturbations;
     double modulusOfElasticity;
     double yieldStrength;
-    double percentYieldStrain; // Used in a heuristic to determine amount by which we can perturb the width
-    double percentTerminal; // Used in heuristic to determine the amount by which we can perturb the terminals
-    double maxRotationAngle; // In radians
-    double rotationFactor;
+    double percentYieldStrength; // Heuristic to see how much we move our displacement vectors
     double perturbProbability;
     std::mt19937 &rng;
 
@@ -159,39 +157,29 @@ struct PerturbationParams {
         : numPerturbations(params.numPerturbations),
         modulusOfElasticity(params.modulusOfElasticity),
         yieldStrength(params.yieldStrength),
-        percentYieldStrain(params.percentYieldStrain),
-        percentTerminal(params.percentTerminal),
-        maxRotationAngle(params.maxRotationAngle),
-        rotationFactor(params.rotationFactor),
+        percentYieldStrength(params.percentYieldStrength),
         perturbProbability(params.perturbProbability),
         rng(params.rng) {}
 };
 
 // The following struct contains random number generators used when building the perturbations;
 // for the multi-branch case, index 0 corresponds to branch 0, and so on
+// TODO: Change this to reflect the fact that we want displacement vectors
 struct PerturbationGenerators {
     double perturbProbability;
-    std::uniform_real_distribution<> uniformPerturb;
-    std::vector<std::normal_distribution<>> widthDistributions;
-    std::vector<std::normal_distribution<>> terminalDistributions;
-    std::vector<std::normal_distribution<>> vectorDistributions;
+    std::vector<double> maxDistances;
     std::mt19937 &rng;
+    std::uniform_real_distribution<> uniformPerturb;
+    std::normal_distribution<> displacementPerturb;
 
-    PerturbationGenerators(double prob,
-                           std::vector<std::normal_distribution<>> w_dists,
-                           std::vector<std::normal_distribution<>> t_dists,
-                           std::vector<std::normal_distribution<>> v_dists,
-                           std::mt19937 &rng)
-                           : perturbProbability(prob),
-                           uniformPerturb(0.0, 1.0),
-                           widthDistributions(std::move(w_dists)),
-                           terminalDistributions(std::move(t_dists)),
-                           vectorDistributions(std::move(v_dists)),
-                           rng(rng) {}
+    PerturbationGenerators(double prob, std::vector<double> maxD, std::mt19937 &rng)
+                           : perturbProbability(prob), maxDistances(std::move(maxD)), rng(rng),
+                           uniformPerturb(0.0, 1.0), displacementPerturb(0.0, 1.0) {}
 };
 
 // This class will hold the methods to generate the datasets required to train the neural networks
-// TODO: Consider making this just a namespace considering the class doesn't store any private variables
+// TODO: Consider making this just a namespace considering the class doesn't store any private variables, though maybe
+//  it could store the perturbation variables
 class DataOperations {
 public:
     DataOperations() = default;
@@ -204,13 +192,13 @@ public:
     std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> generateMidPointsAndVectors(Eigen::VectorXd &side_lengths);
     // TODO: For rotateParametrization, consider implementing a version for the Point version
     std::vector<MeshParametrizationData> rotateParametrization(MeshParametrizationData &params, std::pair<double, double> &rotation_params);
-    ParametrizationDataSet rotateParametrizationEntry(ParametrizationEntry &param, std::pair<double, double> &rotation_params);
+    ParametrizationDataSet rotateParametrizationEntry(ParametrizationEntry &param_entry, std::pair<double, double> &rotation_params);
     ParametrizationDataSet flipVectorEntry(ParametrizationEntry &param, std::pair<double, int> &flip_params, std::mt19937 &rng);
 
     MeshParametrizationData generateSingleBranchParametrization(int num, double width, double length);
     MeshParametrizationData generateMultiBranchParametrization(int num, Eigen::VectorXd &widths, Eigen::VectorXd &lengths);
-    MeshParametrizationData perturbSingleBranchParametrization(const MeshParametrizationData &base_param, PerturbationGenerators &param_gens);
-    MeshParametrizationData perturbMultiBranchParametrization(const MeshParametrizationData &base_param, PerturbationGenerators &param_gens);
+    Eigen::MatrixXd singleBranchDisplacements(PerturbationGenerators &param_gens);
+    Eigen::MatrixXd multiBranchDisplacements(int num, PerturbationGenerators &param_gens);
     ParametrizationDataSet generatePerturbedParametrizations(MeshParametrizationData &base_param, PerturbationParams &params);
     ParametrizationDataSet generateParametrizationDataSet(GenerationParams &params);
     PointDataSet parametrizationToPoint(ParametrizationDataSet &paramSet);
@@ -231,7 +219,5 @@ public:
 private:
 
 };
-
-
 
 #endif //METALFOAMS_DATA_OPERATIONS_H

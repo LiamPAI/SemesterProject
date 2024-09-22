@@ -5,11 +5,8 @@
 #include "../include/mesh_parametrization.h"
 
 // TODO: fix comments to be more descriptive so any first-time reader can easily understand
-// TODO: think about how displacement BCs are related to how the middle terminal will change, and how to incorporate this correctly with training data
 // TODO: adjust any asserts where the statement is always true
 // TODO: within meshParamValidator perhaps, in the multi-branch case, make sure we go from "in" to out when it comes to the terminal orderings
-// TODO: change calls to polynomial points to reflect the new signature
-
 
 // TODO: Double check implementation of this
 // TODO: See how to make sure this normalization stays correct after the NN continues to update these
@@ -295,6 +292,152 @@ bool MeshParametrization::intersectionBranches(Eigen::MatrixXd &poly_points, int
     return true;
 }
 
+// This method takes in a parametrization and returns a matrix containing the points that overlap using our
+// numbering convention
+// TODO: Test this method
+// TODO: Possibly delete this method, as it may not be needed at all given my map method in generateMesh
+// TODO: Possibly change this to reflect the fact that widths could change
+Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &multiBranch) {
+    // Declare useful help variables
+    bool check = false;
+    Eigen::VectorXd pairs(4);
+    Tuple3i next;
+    double eps = 1e-7;
+
+    // TODO: I'm assuming here that we already have a correct parametrization, need to ensure
+    //  this before calling generateMesh
+    Eigen::MatrixXd poly_points = polynomialPoints(multiBranch);
+    int num = multiBranch.numBranches;
+    Eigen::MatrixXd connections(num, 2);
+
+    // Iterate through branches to find a point that is equal to our points on the first branch
+    for (int attempt = 0; attempt < 2; attempt ++) {
+        for (int branch = 1; branch < num; branch++) {
+            pairs(0) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 0)).norm();
+            pairs(1) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch + 2, 0)).norm();
+            pairs(2) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 2)).norm();
+            pairs(3) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch + 2, 2)).norm();
+
+            // We found a matching point
+            if (pairs.any() < eps) {
+                connections(0, 0) = attempt;
+                check = true;
+            }
+                // If no points match, we continue looking for a matching point on the other side of the branch
+            else {
+                continue;
+            }
+
+            // If the points match, we add this using our numbering convention and initialize next
+            if (pairs(0) < eps) {
+                connections(0, 1) = 4 * branch;
+                next = std::make_tuple(branch, 1, 0);
+                break;
+            }
+            else if (pairs(1) < eps) {
+                connections(0, 1) = 4 * branch + 2;
+                next = std::make_tuple(branch, 0, 0);
+                break;
+            }
+            else if (pairs(2) < eps) {
+                connections(0, 1) = 4 * branch + 3;
+                next = std::make_tuple(branch, 1, 1);
+                break;
+            }
+            else if (pairs(3) < eps) {
+                connections(0, 1) = 4 * branch + 5;
+                next = std::make_tuple(branch, 0, 1);
+                break;
+            }
+        }
+        // If we haven't found an equal point, we keep searching
+        if (!check) {
+            continue;
+        }
+        break;
+    }
+    LF_ASSERT_MSG(!check, "Have not found a point that matches another point in a 3+ branch param");
+
+    // Now we have found points that match, we continue the loop for the remaining overlapping points
+    for (int point = 1; point < num; ++point) {
+        bool overall_check = false;
+        check = false;
+        int cur_branch = std::get<0>(next);
+        int pos = std::get<1>(next) == 0 ? 0 : 1;
+        int side = std::get<2>(next) == 0 ? 0 : 1;
+
+        // We have next point to check on all branches, so we should loop through all branches except for our own
+        for (int branch = 0; branch < num; ++branch) {
+            // Skip over branch if it's our current one, as it can't self-overlap
+            if (cur_branch == branch) {
+                continue;
+            }
+
+            // Now we can check all points on this branch to see which one is equal
+            pairs(0) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
+                        - poly_points.block<2, 1>(4 * branch, 0)).norm();
+            pairs(1) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
+                        - poly_points.block<2, 1>(4 * branch + 2, 0)).norm();
+            pairs(2) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
+                        - poly_points.block<2, 1>(4 * branch, 2)).norm();
+            pairs(3) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
+                        - poly_points.block<2, 1>(4 * branch + 2, 2)).norm();
+
+            // We found a match, so we add this point to our connections matrix
+            if (pairs.any() < eps) {
+                connections(point, 0) = 4 * cur_branch + 3 * pos + 2 * side;
+                check = true;
+            }
+
+            // If the points overlap, we add the point to the matrix and initialize next
+            if (pairs(0) < eps) {
+                connections(point, 1) = 4 * branch;
+                next = std::make_tuple(branch, 1, 0);
+                break;
+            } else if (pairs(1) < eps) {
+                connections(point, 1) = 4 * branch + 2;
+                next = std::make_tuple(branch, 0, 0);
+                break;
+            } else if (pairs(2) < eps) {
+                connections(point, 1) = 4 * branch + 3;
+                next = std::make_tuple(branch, 1, 1);
+                break;
+            } else if (pairs(3) < eps) {
+                connections(point, 1) = 4 * branch + 5;
+                next = std::make_tuple(branch, 0, 1);
+                break;
+            }
+
+            // If branch == 0 and check is true, then we have circled back completely, note both
+            // conditions must be true for this to hold
+            if (branch == 0 and check) {
+                overall_check = true;
+            }
+
+            // If check is still false, we haven't yet seen a match, so the loop continues
+            if (!check) {
+                continue;
+            }
+
+            // If we reach this far, we have finished, so we exit the loop
+            break;
+        }
+
+        // We have circled back completely if we find branch 0 again, so we may stop
+        if (overall_check) {
+            break;
+        }
+
+        // If we reach here, we have not circled back and there is a problem in the connections
+        // TODO: Perhaps print the polynomial points to be able to check the values (or not)
+        std::cout << "The polynomial points for the failed 3+ branch param are: \n" << poly_points << std::endl;
+        LF_ASSERT_MSG(true, "Branches do not form a complete circle shape, check parametrization");
+    }
+
+    // Return the matrix of connection points
+    return connections;
+}
+
 // TODO: Implement the ability to handle sideways-U's
 // TODO: Consider forcing the _vectors to stay in a specific position depending on how NN moves them
 // TODO: Might wanna check that the _widths are the exact same, though the algorithm can force this
@@ -461,151 +604,6 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
     return true;
 }
 
-// This method takes in a parametrization and returns a matrix containing the points that overlap using our
-// numbering convention
-// TODO: Test this method
-// TODO: Possibly delete this method, as it may not be needed at all given my map method in generateMesh
-// TODO: Possibly change this to reflect the fact that widths could change
-Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &multiBranch) {
-    // Declare useful help variables
-    bool check = false;
-    Eigen::VectorXd pairs(4);
-    Tuple3i next;
-    double eps = 1e-7;
-
-    // TODO: I'm assuming here that we already have a correct parametrization, need to ensure
-    //  this before calling generateMesh
-    Eigen::MatrixXd poly_points = polynomialPoints(multiBranch);
-    int num = multiBranch.numBranches;
-    Eigen::MatrixXd connections(num, 2);
-
-    // Iterate through branches to find a point that is equal to our points on the first branch
-    for (int attempt = 0; attempt < 2; attempt ++) {
-        for (int branch = 1; branch < num; branch++) {
-            pairs(0) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 0)).norm();
-            pairs(1) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch + 2, 0)).norm();
-            pairs(2) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch, 2)).norm();
-            pairs(3) = (poly_points.block<2, 1>(0, attempt * 2) - poly_points.block<2, 1>(4 * branch + 2, 2)).norm();
-
-            // We found a matching point
-            if (pairs.any() < eps) {
-                connections(0, 0) = attempt;
-                check = true;
-            }
-                // If no points match, we continue looking for a matching point on the other side of the branch
-            else {
-                continue;
-            }
-
-            // If the points match, we add this using our numbering convention and initialize next
-            if (pairs(0) < eps) {
-                connections(0, 1) = 4 * branch;
-                next = std::make_tuple(branch, 1, 0);
-                break;
-            }
-            else if (pairs(1) < eps) {
-                connections(0, 1) = 4 * branch + 2;
-                next = std::make_tuple(branch, 0, 0);
-                break;
-            }
-            else if (pairs(2) < eps) {
-                connections(0, 1) = 4 * branch + 3;
-                next = std::make_tuple(branch, 1, 1);
-                break;
-            }
-            else if (pairs(3) < eps) {
-                connections(0, 1) = 4 * branch + 5;
-                next = std::make_tuple(branch, 0, 1);
-                break;
-            }
-        }
-        // If we haven't found an equal point, we keep searching
-        if (!check) {
-            continue;
-        }
-        break;
-    }
-    LF_ASSERT_MSG(!check, "Have not found a point that matches another point in a 3+ branch param");
-
-    // Now we have found points that match, we continue the loop for the remaining overlapping points
-    for (int point = 1; point < num; ++point) {
-        bool overall_check = false;
-        check = false;
-        int cur_branch = std::get<0>(next);
-        int pos = std::get<1>(next) == 0 ? 0 : 1;
-        int side = std::get<2>(next) == 0 ? 0 : 1;
-
-        // We have next point to check on all branches, so we should loop through all branches except for our own
-        for (int branch = 0; branch < num; ++branch) {
-            // Skip over branch if it's our current one, as it can't self-overlap
-            if (cur_branch == branch) {
-                continue;
-            }
-
-            // Now we can check all points on this branch to see which one is equal
-            pairs(0) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
-                        - poly_points.block<2, 1>(4 * branch, 0)).norm();
-            pairs(1) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
-                        - poly_points.block<2, 1>(4 * branch + 2, 0)).norm();
-            pairs(2) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
-                        - poly_points.block<2, 1>(4 * branch, 2)).norm();
-            pairs(3) = (poly_points.block<2, 1>(4 * cur_branch + 2 * pos, side * 2)
-                        - poly_points.block<2, 1>(4 * branch + 2, 2)).norm();
-
-            // We found a match, so we add this point to our connections matrix
-            if (pairs.any() < eps) {
-                connections(point, 0) = 4 * cur_branch + 3 * pos + 2 * side;
-                check = true;
-            }
-
-            // If the points overlap, we add the point to the matrix and initialize next
-            if (pairs(0) < eps) {
-                connections(point, 1) = 4 * branch;
-                next = std::make_tuple(branch, 1, 0);
-                break;
-            } else if (pairs(1) < eps) {
-                connections(point, 1) = 4 * branch + 2;
-                next = std::make_tuple(branch, 0, 0);
-                break;
-            } else if (pairs(2) < eps) {
-                connections(point, 1) = 4 * branch + 3;
-                next = std::make_tuple(branch, 1, 1);
-                break;
-            } else if (pairs(3) < eps) {
-                connections(point, 1) = 4 * branch + 5;
-                next = std::make_tuple(branch, 0, 1);
-                break;
-            }
-
-            // If branch == 0 and check is true, then we have circled back completely, note both
-            // conditions must be true for this to hold
-            if (branch == 0 and check) {
-                overall_check = true;
-            }
-
-            // If check is still false, we haven't yet seen a match, so the loop continues
-            if (!check) {
-                continue;
-            }
-
-            // If we reach this far, we have finished, so we exit the loop
-            break;
-        }
-
-        // We have circled back completely if we find branch 0 again, so we may stop
-        if (overall_check) {
-            break;
-        }
-
-        // If we reach here, we have not circled back and there is a problem in the connections
-        // TODO: Perhaps print the polynomial points to be able to check the values (or not)
-        std::cout << "The polynomial points for the failed 3+ branch param are: \n" << poly_points << std::endl;
-        LF_ASSERT_MSG(true, "Branches do not form a complete circle shape, check parametrization");
-    }
-
-    // Return the matrix of connection points
-    return connections;
-}
 
 // TODO: Test this tolerance by making sure the strings actualy end up equal
 std::string MeshParametrization::getPointKey(double x, double y, double z, double tolerance = 1e-6) {
@@ -614,21 +612,23 @@ std::string MeshParametrization::getPointKey(double x, double y, double z, doubl
            std::to_string(std::round(z / tolerance));
 }
 
-// The purpose of this function is to take in a parametrization and create a mesh with the given mesh_name,
-// this will allow for the calculation of the energy difference between close by parametrizations
+// The purpose of this function is to take in a parametrization and create a mesh with the given mesh_name, this will
+// allow for the necessary finite element calculations
 // TODO: test this function
 // TODO: very likely I will reset the gmsh model I am using so that this doesn't add points on the model we already opened
 // TODO: Change this to reflect the fact that widths would be a matrix
+// TODO: Decide on how to pick the size of the meshSize (once material and overall size is determined) on adding points
+//  and adjust the mesh size in the following commands
 void MeshParametrization::generateMesh(MeshParametrizationData &parametrization, const std::string &mesh_name) {
     Eigen::MatrixXd poly_points = polynomialPoints(parametrization);
 
-    // TODO: Decide if I want to add a model name when initializing a mesh here
+    // TODO: Decide if I want to add a model name when initializing a mesh here to make sure there is no overlap
     // I'm choosing not to add a model name due to possible repeats, only initializing gmsh
     gmsh::initialize();
-    // TODO: Decide on how to pick the size of the meshSize (once material and overall size is determined) on adding points
-    //  and adjust the mesh size in the following commands
+
     // In this case, there are just 6 points to add, 2 linear lines, 2 splines, and a surface with all curves
     if (parametrization.numBranches == 1) {
+
         // Add the points defined by poly_points
         int p1 = gmsh::model::geo::addPoint(poly_points(0, 0), poly_points(1, 0), 0.0, 0);
         int p2 = gmsh::model::geo::addPoint(poly_points(0, 1), poly_points(1, 1), 0.0, 0);
@@ -651,9 +651,9 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
         gmsh::model::geo::addPhysicalGroup(1, {l1}, 1);
         gmsh::model::geo::addPhysicalGroup(1, {l2}, 2);
     }
-        // In this case, the number of points is highly variable
+
+    // In this case, the number of total points to add is highly variable
     else if (parametrization.numBranches >= 3) {
-        // TODO: decide if I want to call the meshparamvalidator when generating the mesh, which I think I want to avoid
 
         // Initialize matrix that will hold the points that are connected, this will be the basis for centerLines
         Eigen::MatrixXd connectedPoints = connectionPoints(parametrization);
@@ -678,7 +678,7 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
             }
         };
 
-        // Start a loop so we can add each branch to the mesh
+        // Start a loop to add each branch to the mesh
         for (int branch = 0; branch < parametrization.numBranches; ++branch) {
             // This vector will hold the "names" of the points we add to the mesh
             std::vector<int> points;
@@ -775,64 +775,50 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
     gmsh::model::mesh::generate(2);
     // TODO: Make sure that the below logic is correct wrt to putting the mesh in the right location and naming
     const std::filesystem::path here = __FILE__;
-    auto working_dir = here.parent_path();
+    auto working_dir = here.parent_path().parent_path();
     gmsh::write(working_dir / "meshes" / mesh_name);
     // gmsh::write("meshes/" + mesh_name);
 }
 
+// TODO: WORK IN PROGRESS
 // TODO: test this function, and also test the functions in LineMapping that I'm using
-// TODO: make sure this function works given that both the terminal and vector may have changed position
 // TODO: maybe add assert messages to ensure that the branches have the correct size
-// TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
-// The purpose of this function is to take the coordinates of two branches and return the displacement BC for a point
-// on one of the lines of that mesh
-Eigen::Vector2d MeshParametrization::displacementBC (Eigen::MatrixXd firstBranch, Eigen::MatrixXd secondBranch, Eigen::Vector2d point) {
-    // Note that the shape of firstBranch and secondBranch are 4x6, so use this to generate the first line
-    // Initialize the two possible lines for which the point might be on
-    Eigen::Vector2d lineLeftA = firstBranch.block<2, 1>(0, 0);
-    Eigen::Vector2d lineLeftB = firstBranch.block<2, 1>(2, 0);
+// This function takes the polynomial points for a branch, the displacement BCs for the branch, a point on one
+// of the lines of the parametrization, and returns the corresponding displacement BC for that point
+Eigen::Vector2d MeshParametrization::displacementBC (Eigen::MatrixXd branch, Eigen::MatrixXd displacement,
+                                                     Eigen::Vector2d point) {
+    LF_ASSERT_MSG(branch.rows() == 4, "poly points sent to displacementBC has incorrect number of rows, "
+                                      "" << branch.rows());
+    LF_ASSERT_MSG(branch.cols() == 3, "poly points sent to displacementBC has incorrect number of columns, "
+                                      "" << branch.cols());
 
-    Eigen::Vector2d lineRightA = firstBranch.block<2, 1>(0, 2);
-    Eigen::Vector2d lineRightB = firstBranch.block<2, 1>(2, 2);
+    // Note that the shape of branch is 4x3, so use this to generate the two possible lines the point might be on
+    Eigen::Vector2d left_pointA = branch.block<2, 1>(0, 0);
+    Eigen::Vector2d left_pointB = branch.block<2, 1>(2, 0);
+
+    Eigen::Vector2d right_pointA = branch.block<2, 1>(0, 2);
+    Eigen::Vector2d right_pointB = branch.block<2, 1>(2, 2);
 
     // Using this mapping solely to test which line the point is on
-    LineMapping firstLine(lineLeftA, lineLeftB, lineRightA, lineRightB);
+    LineMapping my_lines(left_pointA, left_pointB, right_pointA, right_pointB);
     int line = -1;
 
-    // Find which line the point is on
-    if (firstLine.isPointOnOldLine(point)) {
-        line = 0;
-    } else if (firstLine.isPointOnNewLine(point)) {
-        line = 2;
+    // TODO: Depending on if the ordering of displacement works out, have an assert to see if displacement
+    //  actually has the right shape for this
+    // Find which line the point is on and adjust the other line to the "displaced" line, so that we have a mapping
+    // from old line -> new displaced line
+    if (my_lines.isPointOnFirstLine(point)) {
+        my_lines.update(left_pointA, left_pointB, left_pointA + displacement.block<2, 1>(0, 0),
+                left_pointB + displacement.block<2, 1>(2, 0));
+    } else if (my_lines.isPointOnSecondLine(point)) {
+        my_lines.update(right_pointA, right_pointB, right_pointA + displacement.block<2, 1>(0, 1),
+                right_pointB + displacement.block<2, 1>(2, 1));
     } else {
         LF_ASSERT_MSG(false, "The given point is not on either line in displacementBC");
     }
 
-    // The logic below is to find the correct orientation of the second line to be able to correctly initialize our
-    // lineMapping, being firstLine
-    double min = 1e7;
-    double distance = 1e7;
-    Eigen::Vector2d initialPoint = firstBranch.block<2, 1>(0, line);
-    for (int i = 0; i < 4; ++i) {
-
-        int startRow = i % 2;
-        int startCol = i / 2;
-        distance = (initialPoint - secondBranch.block<2, 1>(startRow * 2, startCol * 2)).norm();
-        if (distance < min) {
-
-            // depending on which line our point is on, we add the new line that is in the correct orientation
-            if (line == 0) {
-                firstLine.update(lineLeftA, lineLeftB, secondBranch.block<2, 1>(startRow * 2, startCol * 2),
-                                 secondBranch.block<2, 1>(2 - startRow * 2, startCol * 2));
-            } else {
-                firstLine.update(lineRightA, lineRightB, secondBranch.block<2, 1>(startRow * 2, startCol * 2),
-                                 secondBranch.block<2, 1>(2 - startRow * 2, startCol * 2));
-            }
-        }
-    }
-
     // We return the displacement vector for the newly mapped point
-    return firstLine.mapPoint(point) - point;
+    return my_lines.mapPoint(point) - point;
 }
 
 // TODO: Test this function
@@ -889,9 +875,14 @@ void MeshParametrization::fixFlaggedSolutionComponentsLE (std::vector<std::pair<
     }
 }
 
+// TODO: WORK IN PROGRESS
 // TODO: Implement this function
 // TODO: Change this function to reflect the fact that we just want displacement vectors as the second thing
-bool MeshParametrization::elasticRegion(MeshParametrizationData &first, MeshParametrizationData &second) {
+// TODO: Before generating the mesh, call meshParamValidator
+// TODO: To reduce the overall workload, perhaps use the displacementEnergy function and call this from there
+// This function takes in a parametrization and a displacement BC, and uses the corresponding Finite Element
+// calculation to see if we are still in the elastic region
+bool MeshParametrization::elasticRegion(MeshParametrizationData &first, Eigen::MatrixXd &displacement) {
     // This function should check if the second parametrization is within the linear elastic region of the first
     // You may want to use the displacementEnergy function and set a threshold for the maximum allowed displacement
     // or strain.
@@ -900,16 +891,23 @@ bool MeshParametrization::elasticRegion(MeshParametrizationData &first, MeshPara
     return true;
 }
 
+// TODO: WORK IN PROGRESS
 // TODO: Decide on increasing the signature of the function in order to have extra parameters for accuracy of the calculation
 // TODO: Also decide on if I should add a string so I know where to store the mesh
 // TODO: Change the signature of this function to accept the necessary parameters such as E, nu, yield point
 // TODO: Change this function to reflect the fact that we just want displacement vectors
-std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizationData &first, MeshParametrizationData &second) {
+// TODO: Before generating the mesh, call meshParamValidator
+// TODO: Find a way to make sure the displacement ordering lines up well with the poly_points ordering
+// TODO: Within this function, use elastic region in order to initialize the bool of the pair to return
+// This function takes in a parametrization and a vector of displacements representing boundary conditions and returns
+// the energy difference for the finite element calculation
+std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizationData &param, Eigen::MatrixXd &displacement) {
     // Generate the mesh we want to perform a FEM calculation on
-    generateMesh(first, "energy1");
+    // TODO: Decide on a better naming system since files will be created constantly
+    generateMesh(param, "energy1");
     auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
     const std::filesystem::path here = __FILE__;
-    auto mesh_file = here.parent_path();
+    auto mesh_file = here.parent_path().parent_path();
     mesh_file += "meshes/energy1.msh";
     lf::io::GmshReader reader(std::move(factory), mesh_file);
     const std::shared_ptr<lf::mesh::Mesh> mesh_ptr = reader.mesh();
@@ -917,9 +915,8 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     // Initialize the finite element space we will use for our calculation
     auto fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO2<double>>(mesh_ptr);
 
-    // Obtain the polynomial points for both parametrizations to build the dirichlet conditions
-    auto poly_points_first = polynomialPoints(first);
-    auto poly_points_second = polynomialPoints(second);
+    // Obtain the polynomial points for the parametrization to build the dirichlet conditions
+    auto poly_points = polynomialPoints(param);
 
     const lf::assemble::DofHandler &dofh {fe_space->LocGlobMap()};
     const lf::uscalfe::size_type N_dofs {dofh.NumDofs()};
@@ -938,14 +935,16 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
         const lf::mesh::Entity &node = dofh.Entity(dof_num);
 
         // If the node has a physical entity number, it is one of the BC nodes for displacement by current design
+        // TODO: make sure of this
         if (!reader.PhysicalEntityNr(node).empty()) {
             // This node will have a displacement BC, so bd_flags is set to true
             bd_flags(node) = true;
 
             // We obtain the tag number, which helps to determine what this BC is and add it to the std::vector
             int tag = reader.PhysicalEntityNr(node)[0];
-            Eigen::Vector2d BC = displacementBC(poly_points_first.block<4, 3>((tag - 1) * 4, 0),
-                                                poly_points_second.block<4, 3>((tag - 1) * 4, 0),
+
+            Eigen::Vector2d BC = displacementBC(poly_points.block<4, 3>((tag - 1) * 4, 0),
+                                                displacement.block((tag - 1) * 4, 0, 4, displacement.cols()),
                                                 node.Geometry()->Global(node.Geometry()->RefEl().NodeCoords()));
 
             displacementBCs.emplace_back(true, BC);
