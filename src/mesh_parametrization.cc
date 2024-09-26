@@ -440,7 +440,6 @@ Eigen::MatrixXd MeshParametrization::connectionPoints(MeshParametrizationData &m
 
 // TODO: Implement the ability to handle sideways-U's
 // TODO: Consider forcing the _vectors to stay in a specific position depending on how NN moves them
-// TODO: Might wanna check that the _widths are the exact same, though the algorithm can force this
 // TODO: Might wanna check that the 3 terminal aren't extremely close together
 // TODO: Might wanna check that the terminal and _vectors don't add up in a way where poly_points overlap
 // TODO: Rethink this implementation knowing how we can now use splines for the sides of an edge, and the main thing to
@@ -466,6 +465,7 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
         // TODO: I also need to check all the individual branches as in num == 1 case
         // TODO: I also need to make sure that the branches don't overlap with each other, e.g. the centers point outwards
         //  and that branches don't touch their neighbouring branches (how to check the second part)
+        // TODO: In addition, make sure that the terminals point outward from the center for ordering purposes
     else if (param.numBranches >= 3) {
         // Declare parameters that will be useful for validating the parametrization
         double eps = 1e-7;

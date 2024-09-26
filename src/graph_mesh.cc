@@ -5,6 +5,7 @@
 #include "../include/graph_mesh.h"
 #include <gmsh.h>
 #include <iostream>
+#include <filesystem>
 
 // The following are helpers function that aid in the building of the "graph" for the mesh the NN is attempting to
 // find the minimization energy for. The following spits the mesh into 2D edges and nodes through a labelling system

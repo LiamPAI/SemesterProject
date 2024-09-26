@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 
+# Set the correct SDK path
+execute_process(
+        COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Hunter configuration
 include("cmake/HunterGate.cmake")
 HunterGate(
     URL "https://github.com/cpp-pm/hunter/archive/v0.25.3.tar.gz"
@@ -10,11 +18,13 @@ HunterGate(
 ### Setup CMake Project ###
 project(MetalFoams)
 
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # Find GMSH
-find_path(GMSH_INCLUDE_DIR gmsh.h PATHS /usr/local/include)
-find_library(GMSH_LIBRARY NAMES gmsh PATHS /usr/local/lib)
+set(GMSH_ROOT "/opt/homebrew/Cellar/gmsh/4.13.1_1")
+
+find_path(GMSH_INCLUDE_DIR gmsh.h PATHS ${GMSH_ROOT}/include)
+find_library(GMSH_LIBRARY NAMES gmsh PATHS ${GMSH_ROOT}/lib)
 
 # download dependencies
 hunter_add_package(Eigen)
@@ -24,6 +34,11 @@ hunter_add_package(lehrfempp)
 find_package(lehrfempp CONFIG REQUIRED)
 
 hunter_add_package(ZLIB)
+
+set(CMAKE_THREAD_LIBS_INIT "-lpthread")
+set(CMAKE_HAVE_THREADS_LIBRARY 1)
+set(CMAKE_USE_WIN32_THREADS_INIT 0)
+set(CMAKE_USE_PTHREADS_INIT 1)
 
 # Collect all source files
 set(SOURCES
@@ -42,21 +57,21 @@ add_executable(metal_foam_mesh ${SOURCES})
 # Include Directories
 target_include_directories(metal_foam_mesh PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${GMSH_INCLUDE_DIR})
+        ${GMSH_INCLUDE_DIR}
+)
 
 target_link_libraries(metal_foam_mesh PRIVATE
-        ${GMSH_LIBRARY}
         LF::lf.base
         LF::lf.assemble
         LF::lf.fe
         LF::lf.geometry
         LF::lf.io
+        ${GMSH_LIBRARY}
         LF::lf.mesh
         LF::lf.quad
         LF::lf.refinement
         LF::lf.uscalfe
         )
 
-#file(COPY ${CMAKE_SOURCE_DIR}/python DESTINATION ${CMAKE_BINARY_DIR})
 file(GLOB PYTHON_SCRIPTS "python/*.py")
 file(COPY ${PYTHON_SCRIPTS} DESTINATION ${CMAKE_BINARY_DIR}/python)

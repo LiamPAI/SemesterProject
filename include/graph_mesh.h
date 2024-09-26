@@ -6,8 +6,10 @@
 #define METALFOAMS_GRAPH_MESH_H
 
 #include <lf/uscalfe/uscalfe.h>
-#include <lf/mesh/hybrid2d/hybrid2d.h>
-#include <lf/io/io.h>
+//#include <lf/mesh/hybrid2d/hybrid2d.h>
+//#include <lf/io/io.h>
+#include <map>
+#include <set>
 
 // The purpose of the following data structure is to store the planned mesh, which is a 2D graph-like mesh, where
 // both the edges and the nodes are 2D

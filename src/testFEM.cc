@@ -13,7 +13,6 @@
 #include "../include/linear_matrix_computation.h"
 #include "../include/linear_elasticity_assembler.h"
 #include "../include/parametric_matrix_computation.h"
-#include <gmsh.h>
 #include "../include/graph_mesh.h"
 
 // TODO: Clean up this code, as it is the primary code I'd like to use for testing all functions
@@ -209,7 +208,7 @@ void test_mesh(std::string path, int degree) {
 
     auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
     const std::filesystem::path here = __FILE__;
-    auto mesh_file = here.parent_path();
+    auto mesh_file = here.parent_path().parent_path();
     mesh_file += path;
     lf::io::GmshReader reader(std::move(factory), mesh_file);
 
@@ -286,23 +285,16 @@ void test_mesh(std::string path, int degree) {
 }
 
 int main() {
-//    test_mesh("/meshes/test4.msh", 1);
+    //test_mesh("/meshes/test4.msh", 1);
 //    test_mesh("/meshes/test4.msh", 2);
+
+    std::cout << lf::base::RefEl::kTria().NumNodes() << std::endl;
 
     GraphMesh mesh;
 
-    try {
-
-         mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
-//         //Load the mesh from a file
-//         mesh.loadMeshFromFile("testNE2.geo");
-//
-//         //Build the graph structure from the loaded mesh
-//         mesh.buildGraphFromMesh();
-//
-//         //Print the entire mesh geometry
-//         mesh.printMeshGeometry();
-
+    try
+    {
+        mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
     }
     catch (const std::exception& e) {
         std::cerr << "An error occurred: " << e.what() << std::endl;
