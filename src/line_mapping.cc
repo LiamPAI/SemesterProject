@@ -16,32 +16,24 @@ LineMapping::LineMapping(Eigen::Vector2d a, Eigen::Vector2d b, Eigen::Vector2d c
 
 // This function computes the necessary transformation matrix to map points from one line to another
 void LineMapping::computeTransformationMatrix() {
-    // Translate the old line to the origin
-    Eigen::Vector2d translationToOrigin = -leftStart;
+    Eigen::Vector2d oldVec = leftEnd - leftStart;
+    Eigen::Vector2d newVec = rightEnd - rightStart;
 
-    // Calculate the angle of rotation
-    Eigen::Vector2d oldDir = (leftEnd - leftStart).normalized();
-    Eigen::Vector2d newDir = (rightEnd - rightStart).normalized();
-    double angle = std::atan2(newDir.y(), newDir.x()) - std::atan2(oldDir.y(), oldDir.x());
+    // Create a 2x2 matrix that maps the old vector to the new vector
+    Eigen::Matrix2d A;
+    A.col(0) = oldVec;
+    A.col(1) = Eigen::Vector2d(-oldVec.y(), oldVec.x());
 
-    Eigen::Matrix2d rotation;
-    rotation << std::cos(angle), -std::sin(angle),
-            std::sin(angle),  std::cos(angle);
+    Eigen::Matrix2d B;
+    B.col(0) = newVec;
+    B.col(1) = Eigen::Vector2d(-newVec.y(), newVec.x());
 
-    // Translate to the new start point
-    Eigen::Vector2d translationToNewStart = rightStart;
+    Eigen::Matrix2d linearTransform = B * A.inverse();
 
-    // Combine both transformations
-    Eigen::Matrix3d T1 = Eigen::Matrix3d::Identity();
-    T1.block<2,1>(0,2) = translationToOrigin;
-
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-    R.block<2,2>(0,0) = rotation;
-
-    Eigen::Matrix3d T2 = Eigen::Matrix3d::Identity();
-    T2.block<2,1>(0,2) = translationToNewStart;
-
-    transformationMatrix = T2 * R * T1;
+    // Create the full 3x3 transformation matrix
+    transformationMatrix = Eigen::Matrix3d::Identity();
+    transformationMatrix.block<2,2>(0,0) = linearTransform;
+    transformationMatrix.block<2,1>(0,2) = rightStart - linearTransform * leftStart;
 }
 
 // Use the transformation matrix to map the point
@@ -94,3 +86,97 @@ bool LineMapping::isPointOnFirstLine(const Eigen::Vector2d& point, double tolera
 bool LineMapping::isPointOnSecondLine(const Eigen::Vector2d& point, double tolerance) const {
     return distanceToLine(point, rightStart, rightEnd) <= tolerance;
 }
+
+// This function will return a bool, true if the lines intersect along the interval for which they are defined,
+// false otherwise
+bool LineMapping::linesIntersect() const
+{
+    // Define the vectors for each line
+    Eigen::Vector2d v1 = leftEnd - leftStart;
+    Eigen::Vector2d v2 = rightEnd - rightStart;
+
+    // Calculate the determinant to see if they are parallel, in which case we check if they overlap or not
+    double det = v1.x() * v2.y() - v1.y() * v2.x();
+    if (std::abs(det) < 1e-9) {
+        Eigen::Vector2d diff = rightStart - leftStart;
+        double cross = diff.x() * v1.y() - diff.y() * v1.x();
+
+        // If the lines are co-linear, we check if they overlap or not
+        if (std::abs(cross) < 1e-9) {
+            double t0 = diff.dot(v1) / v1.dot(v1);
+            double t1 = t0 + v2.dot(v1) / v1.dot(v1);
+
+            if (t0 > t1) std::swap(t0, t1);
+
+            // Check if overlap exists and is not just at endpoints
+            return t0 <= 1 && t1 >= 0;
+        }
+        return false;
+    }
+
+    // Calculate parametrization parameters, which vary on the interval [0, 1]
+    Eigen::Vector2d diff = rightStart - leftStart;
+    double t = (diff.x() * v2.y() - diff.y() * v2.x()) / det;
+    double s = (diff.x() * v1.y() - diff.y() * v1.x()) / det;
+
+    // If the parameters are on the interval [0, 1], then the lines intersect
+    return (t >= 0 and t <= 1 and s >= 0 and s <= 1);
+}
+
+// This function is identical to linesIntersect() but does not count the end points of the line as a
+// point of intersection, note this function also counts overlap as an intersection
+bool LineMapping::linesIntersectWithoutEnds() const
+{
+    // Define the vectors for each line
+    Eigen::Vector2d v1 = leftEnd - leftStart;
+    Eigen::Vector2d v2 = rightEnd - rightStart;
+
+    // Calculate the determinant to see if they are parallel, in which case we check if they overlap or not
+    double det = v1.x() * v2.y() - v1.y() * v2.x();
+    if (std::abs(det) < 1e-9) {
+        Eigen::Vector2d diff = rightStart - leftStart;
+        double cross = diff.x() * v1.y() - diff.y() * v1.x();
+
+        // If the lines are co-linear, we check if they overlap or not
+        if (std::abs(cross) < 1e-9) {
+            double t0 = diff.dot(v1) / v1.dot(v1);
+            double t1 = t0 + v2.dot(v1) / v1.dot(v1);
+
+            if (t0 > t1) std::swap(t0, t1);
+
+            // Check if overlap exists and is not just at endpoints
+            return t0 < 1 && t1 > 0 && !(std::abs(t0) < 1e-9 || std::abs(t1 - 1) < 1e-9);
+        }
+        return false;
+    }
+
+    // Calculate parametrization parameters, which vary on the interval [0, 1]
+    Eigen::Vector2d diff = rightStart - leftStart;
+    double t = (diff.x() * v2.y() - diff.y() * v2.x()) / det;
+    double s = (diff.x() * v1.y() - diff.y() * v1.x()) / det;
+
+    // If the parameters are on the interval [0, 1], then the lines intersect
+    return (t > 0 and t < 1 and s > 0 and s < 1);
+}
+
+
+
+// This function returns the acute angle between two lines in units of degrees, using the properties of dot product
+double LineMapping::angleBetweenLines() const
+{
+    // Calculate normalized direction vectors, so it is easier to obtain the angle
+    Eigen::Vector2d dir1 = (leftEnd - leftStart).normalized();
+    Eigen::Vector2d dir2 = (rightEnd - rightStart).normalized();
+
+    // Calculate the dot product of the two vectors
+    double dot_product = dir1.dot(dir2);
+
+    // Ensure it is on the interval [-1, 1] to get a proper angle;
+    dot_product = std::max(-1.0, std::min(1.0, dot_product));
+
+    // Calculate the angle between the two vectors, in degrees, and return it
+    double angle = std::acos(std::abs(dot_product)) * 180.0 / M_PI;
+
+    return angle;
+}
+

@@ -10,8 +10,6 @@
 #include <lf/uscalfe/uscalfe.h>
 #include <Eigen/Core>
 
-// TODO: test if LF_ASSERT wants true or false in order for the condition to be asserted
-
 //The following code can take in parametrized or non-parametrized triangles and quadrangles to compute the element
 //stiffness matrices and load vector on a given mesh
 namespace ParametricMatrixComputation {
@@ -267,7 +265,6 @@ namespace ParametricMatrixComputation {
     //points on the mesh (in this case the quadrature points)
     //The strains and stress are made up each of 3 components (xx, yy, xy) for each quadrature point, they are stored
     //as column _vectors
-    // TODO: check that this is correctly implemented
     std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> ParametricFEElementMatrix::stressStrain
     (const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh) {
 
@@ -411,7 +408,6 @@ namespace ParametricMatrixComputation {
         }
     }
 
-    // TODO: Test this method
     // This method takes in a cell, the overall displacement vector for the mesh, and the Dofhandler and outputs the
     // energy functional over that cell. Note that due to the parameters of the research problem, I do not include the
     // capability of external forces or non-zero traction BCs, though this could be implemented using functionality
@@ -447,6 +443,7 @@ namespace ParametricMatrixComputation {
                     // Sum the energy for this quadrature point
                     energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
                 }
+                    break;
             }
 
             case lf::base::RefEl::kQuad() : {
@@ -461,14 +458,13 @@ namespace ParametricMatrixComputation {
                     // Sum the energy for this quadrature point
                     energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
                 }
+                    break;
             }
 
             default : {
-                LF_ASSERT_MSG(true, "Illegal cell type sent to stressStrain");
+                LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
             }
-
         }
         return energy;
     }
-
 }

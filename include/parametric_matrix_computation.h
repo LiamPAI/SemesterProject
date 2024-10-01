@@ -59,7 +59,6 @@ namespace ParametricMatrixComputation {
         // This method is virtually identical to the one in linear_matrix computation
         std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
 
-        // TODO: Implement this method
         // The purpose of this method is to calculate the energy of a cell once we have obtained the displacement vector
         // Note this method will use stressStrain as part of its calculation
         double energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
@@ -78,7 +77,7 @@ namespace ParametricMatrixComputation {
         ParametricFELoadVector() = delete;
 
         //The case where we don't have traction, 0 Neumann condition, the rhs vector will be 0
-        ParametricFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags)
+        explicit ParametricFELoadVector(lf::mesh::utils::CodimMeshDataSet<bool> bd_flags)
         : bd_flags(std::move(bd_flags)), traction_{}, body_f{} {}
 
         //The case where there is traction but no body force
@@ -91,7 +90,7 @@ namespace ParametricMatrixComputation {
         : bd_flags(std::move(bd_flags)), traction_(std::move(traction)), body_f(std::move(body)) {}
 
 
-        //TODO: implement the capability for there to be a traction BC and displacement BC on the same node
+        //TODO: implement the capability for there to be a traction BC and displacement BC on the same node?
         //Return the value at bd_flags for edges, and if there is no body force, don't loop over cells
         bool isActive (const lf::mesh::Entity &entity) {
             const lf::base::RefEl ref_el (entity.RefEl());

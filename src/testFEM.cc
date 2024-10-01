@@ -194,7 +194,7 @@ std::pair<Eigen::SparseMatrix<double>, Eigen::Matrix<double, Eigen::Dynamic, 1>>
             LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
             LinearElasticityAssembler::AssembleVectorLocally(1, dofh, load, phi);
         }
-
+        std::cout << "Galerkin matrix: \n" << A.makeDense() << std::endl;
         result = adjustSolution(reader, A, phi, 10, degree, dist0nodes);
     }
 
@@ -256,8 +256,10 @@ void test_mesh(std::string path, int degree) {
     sol_vec = solver.solve(result.second);
 
     std::cout << "Max distance is " << sol_vec.lpNorm<Eigen::Infinity>() << std::endl;
+    std::cout << "sol_vec is \n" << sol_vec << std::endl;
 
     auto true_sol_vec = adjustDisplacementVector(sol_vec, N_dofs, dist0nodes);
+
 
     double E = 30000000.0;
     double v = 0.3;
@@ -266,60 +268,36 @@ void test_mesh(std::string path, int degree) {
     ParametricMatrixComputation::ParametricFEElementMatrix assemblePar{E, v, false};
 
     if (degree == 1) {
-        auto linearPinn = LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemble, 1);
-        //std::cout << "\n\n" << std::get<3>(linearPinn).lpNorm<Eigen::Infinity>() << std::endl;
-        //std::cout << std::get<2>(linearPinn).lpNorm<Eigen::Infinity>() << std::endl;
-        std::cout << std::get<3>(linearPinn) << std::endl;
+        auto linearPinn = LinearElasticityAssembler::stressStrainLoader(mesh_ptr, true_sol_vec, assemble, 1);
+        std::cout << "Value of stresses: \n" << std::get<2>(linearPinn) << std::endl;
+        std::cout << "Value of strains: \n" << std::get<3>(linearPinn) << std::endl;
         std::cout << std::get<4>(linearPinn) << std::endl;
-
     }
     else {
-        auto paraPinn = LinearElasticityAssembler::pinnDataLoader(mesh_ptr, true_sol_vec, assemblePar, 2);
-        //std::cout << "\n\n" << std::get<3>(paraPinn).lpNorm<Eigen::Infinity>() << std::endl;
-        //std::cout << std::get<2>(paraPinn).lpNorm<Eigen::Infinity>() << std::endl;
+        auto paraPinn = LinearElasticityAssembler::stressStrainLoader(mesh_ptr, true_sol_vec, assemblePar, 2);
+        std::cout << std::get<2>(paraPinn) << std::endl;
         std::cout << std::get<3>(paraPinn) << std::endl;
         std::cout << std::get<4>(paraPinn) << std::endl;
-
     }
 
 }
 
 int main() {
-    //test_mesh("/meshes/test4.msh", 1);
+    test_mesh("/meshes/test0.msh", 1);
 //    test_mesh("/meshes/test4.msh", 2);
 
-    std::cout << lf::base::RefEl::kTria().NumNodes() << std::endl;
 
-    GraphMesh mesh;
-
-    try
-    {
-        mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
-    }
-    catch (const std::exception& e) {
-        std::cerr << "An error occurred: " << e.what() << std::endl;
-        return 1;
-    }
-
-    return 0;
+    // GraphMesh mesh;
+    //
+    // try
+    // {
+    //     mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
+    // }
+    // catch (const std::exception& e) {
+    //     std::cerr << "An error occurred: " << e.what() << std::endl;
+    //     return 1;
+    // }
+    //
+    // return 0;
 
 }
-
-//    Eigen::Vector2d A(0, 0), B(std::sqrt(2), 0);  // Old line along x-axis
-//
-//    // Test with 45 degrees clockwise and counterclockwise rotations
-//    Eigen::Vector2d C1(-1, 1), D1(0, 0);  // 45 degrees counterclockwise
-//    Eigen::Vector2d C2(1, -1), D2(2, 0);  // 45 degrees clockwise
-//
-//    LineMapping mapping1(A, B, C1, D1);
-//    LineMapping mapping2(A, B, C2, D2);
-//
-//    // Test point
-//    Eigen::Vector2d testPoint(-1.41, 0);
-//
-//    Eigen::Vector2d mappedPoint1 = mapping1.mapPoint(testPoint);
-//    Eigen::Vector2d mappedPoint2 = mapping2.mapPoint(testPoint);
-//
-//    std::cout << "Original point: " << testPoint.transpose() << std::endl;
-//    std::cout << "Mapped point (45 deg CCW): " << mappedPoint1.transpose() << std::endl;
-//    std::cout << "Mapped point (45 deg CW): " << mappedPoint2.transpose() << std::endl;

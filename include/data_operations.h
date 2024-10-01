@@ -102,6 +102,7 @@ using DataSet = std::variant<ParametrizationDataSet, PointDataSet>;
 
 // TODO: Consider making some of these parameters within a certain range (e.g. flip probability between 0 and 1) in constructor
 // TODO: Change this to reflect the fact that we want displacement vectors
+// TODO: Check if we actually need yieldStrain here, since I'm not checking it in linear elastic
 struct GenerationParams {
     int datasetSize;
     int numBranches;
@@ -113,16 +114,19 @@ struct GenerationParams {
     double modulusOfElasticity; // TODO: Ensure these are the correct parameters I would like for energy calculation
     double poissonRatio;
     double yieldStrength;
+    double yieldStrain;
     int numPerturbations;
     double percentYieldStrength; // TODO: This will change since we are now using displacement vectors to perturb
     double perturbProbability; // TODO: This will change since we are now using displacement vectors to perturb
+    double meshSize;
+    int order;
     unsigned seed;
     std::mt19937 rng;
 
     GenerationParams(int size, int numB, std::pair<double, double> lenInterval, std::pair<double, double> widthInterval,
                      std::pair<double, int> flipP, std::pair<double, double> baseRotP,
-                     std::pair<double, double> dataRotP, double modulus, double poisson, double yield, int numPer,
-                     double perStrength, double perProb,
+                     std::pair<double, double> dataRotP, double modulus, double poisson, double yieldStren,
+                     double yieldStra, int numPer, double perStrength, double perProb, double meshS, int o,
                      unsigned s = std::chrono::system_clock::now().time_since_epoch().count())
             : datasetSize(size),
             numBranches(numB),
@@ -133,10 +137,13 @@ struct GenerationParams {
             dataRotationParams(std::move(dataRotP)),
             modulusOfElasticity(modulus),
             poissonRatio(poisson),
-            yieldStrength(yield),
+            yieldStrength(yieldStren),
+            yieldStrain(yieldStra),
             numPerturbations(numPer),
             percentYieldStrength(perStrength),
             perturbProbability(perProb),
+            meshSize(meshS),
+            order(o),
             seed(s),
             rng(seed) {}
 };
@@ -148,16 +155,24 @@ struct GenerationParams {
 struct PerturbationParams {
     int numPerturbations;
     double modulusOfElasticity;
+    double poissonRatio;
     double yieldStrength;
+    double yieldStrain;
     double percentYieldStrength; // Heuristic to see how much we move our displacement vectors
+    double meshSize;
+    int order;
     double perturbProbability;
     std::mt19937 &rng;
 
     explicit PerturbationParams(GenerationParams &params)
         : numPerturbations(params.numPerturbations),
         modulusOfElasticity(params.modulusOfElasticity),
+        poissonRatio(params.poissonRatio),
         yieldStrength(params.yieldStrength),
+        yieldStrain(params.yieldStrain),
         percentYieldStrength(params.percentYieldStrength),
+        meshSize(params.meshSize),
+        order(params.order),
         perturbProbability(params.perturbProbability),
         rng(params.rng) {}
 };

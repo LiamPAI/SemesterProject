@@ -42,7 +42,6 @@ set(CMAKE_USE_PTHREADS_INIT 1)
 
 # Collect all source files
 set(SOURCES
-        src/testFEM.cc
         src/graph_mesh.cc
         src/linear_matrix_computation.cc
         src/parametric_matrix_computation.cc
@@ -51,10 +50,11 @@ set(SOURCES
         src/mesh_parametrization.cc
 )
 
-# Define executable
-add_executable(metal_foam_mesh ${SOURCES})
+# Define executables
+add_executable(metal_foam_mesh ${SOURCES}
+        src/testFEM.cc)
 
-# Include Directories
+# Include Directories for each executable
 target_include_directories(metal_foam_mesh PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${GMSH_INCLUDE_DIR}
@@ -72,6 +72,48 @@ target_link_libraries(metal_foam_mesh PRIVATE
         LF::lf.refinement
         LF::lf.uscalfe
         )
+
+add_executable(test_mesh_parametrization
+        test/test_mesh_parametrization.cc
+        ${SOURCES})
+
+target_include_directories(test_mesh_parametrization PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${GMSH_INCLUDE_DIR})
+
+target_link_libraries(test_mesh_parametrization PRIVATE
+        LF::lf.base
+        LF::lf.assemble
+        LF::lf.fe
+        LF::lf.geometry
+        LF::lf.io
+        ${GMSH_LIBRARY}
+        LF::lf.mesh
+        LF::lf.quad
+        LF::lf.refinement
+        LF::lf.uscalfe
+)
+
+add_executable(test_data_operations
+        test/test_data_operations.cpp
+        ${SOURCES})
+
+target_include_directories(test_data_operations PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${GMSH_INCLUDE_DIR})
+
+target_link_libraries(test_data_operations PRIVATE
+        LF::lf.base
+        LF::lf.assemble
+        LF::lf.fe
+        LF::lf.geometry
+        LF::lf.io
+        ${GMSH_LIBRARY}
+        LF::lf.mesh
+        LF::lf.quad
+        LF::lf.refinement
+        LF::lf.uscalfe
+)
 
 file(GLOB PYTHON_SCRIPTS "python/*.py")
 file(COPY ${PYTHON_SCRIPTS} DESTINATION ${CMAKE_BINARY_DIR}/python)

@@ -317,7 +317,6 @@ namespace LinearMatrixComputation {
         }
     }
 
-    // TODO: Test this method
     // This method takes in a cell, the overall displacement vector for the mesh, and the Dofhandler and outputs the
     // energy functional over that cell. Note that due to the parameters of the research problem, I do not include the
     // capability of external forces or non-zero traction BCs
@@ -352,6 +351,7 @@ namespace LinearMatrixComputation {
                     // Sum the energy for this quadrature point
                     energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
                 }
+                    break;
             }
 
             case lf::base::RefEl::kQuad() : {
@@ -366,12 +366,12 @@ namespace LinearMatrixComputation {
                     // Sum the energy for this quadrature point
                     energy += 0.5 * qr.Weights()[i] * determinants[i] * stresses.col(i).transpose() * strains.col(i);
                 }
+                    break;
             }
 
             default : {
                 LF_ASSERT_MSG(false, "Illegal cell type sent to stressStrain");
             }
-
         }
         return energy;
     }

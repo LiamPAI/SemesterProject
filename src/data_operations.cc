@@ -13,6 +13,7 @@
 //  training a NN, or if they will have to be shifted around and I need to include parametrizations close to the origin
 // TODO: IDEA: when taking in a mesh, have some processing that determines min and max "length" + "width" of branches for future training
 // TODO change return and initialization statements with std::move if possible, it's more efficient
+// TODO: Change this to reflect the fact I created the geometries folder
 
 
 // TODO: test this function, and determine the order of the bits
@@ -438,12 +439,16 @@ ParametrizationDataSet DataOperations::generatePerturbedParametrizations(MeshPar
 
         PerturbationGenerators perturb_params = {params.perturbProbability, max_distances, params.rng};
 
+        calculationParams calc_energy_params {params.yieldStrength, params.modulusOfElasticity,
+            params.poissonRatio,params.meshSize, params.order};
+
         // Keep adding data entries until we reach our desired size for this base_param
         // TODO: Implement something to prevent an infinite loop here, and perhaps add a print statement for testing purposes
         while (perturbed_entries.size() < params.numPerturbations) {
             auto displacements = singleBranchDisplacements(perturb_params);
 
-            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, displacements);
+            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param,
+                displacements, calc_energy_params);
 
             if (energy_check.first) {
                 perturbed_entries.emplace_back(1, base_param, displacements, energy_check.second);
@@ -469,12 +474,16 @@ ParametrizationDataSet DataOperations::generatePerturbedParametrizations(MeshPar
 
         PerturbationGenerators perturb_params = {params.perturbProbability, max_distances, params.rng};
 
+        calculationParams calc_energy_params {params.yieldStrength, params.modulusOfElasticity,
+            params.poissonRatio,params.meshSize, params.order};
+
         // Keep adding data entries until we reach our desired size for this base_param
         // TODO: Implement something to prevent an infinite loop here, and perhaps add a print statement for testing purposes
         while (perturbed_entries.size() < params.numPerturbations) {
             auto displacements = multiBranchDisplacements(base_param.numBranches, perturb_params);
 
-            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param, displacements);
+            std::pair<bool, double> energy_check = MeshParametrization::displacementEnergy(base_param,
+                displacements, calc_energy_params);
 
             if (energy_check.first) {
                 perturbed_entries.emplace_back(1, base_param, displacements, energy_check.second);

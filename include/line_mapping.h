@@ -29,6 +29,10 @@ public:
                 const Eigen::Vector2d& c, const Eigen::Vector2d& d);
     bool isPointOnFirstLine(const Eigen::Vector2d& point, double tolerance = 1e-6) const;
     bool isPointOnSecondLine(const Eigen::Vector2d& point, double tolerance = 1e-6) const;
+
+    bool linesIntersect() const;
+    bool linesIntersectWithoutEnds() const;
+    double angleBetweenLines() const;
 };
 
 #endif //METALFOAMS_LINE_MAPPING_H
