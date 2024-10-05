@@ -21,9 +21,9 @@
 //      curves making up the middle portion of an edge must be a spline
 
 // TODO: Delete all print statements once done testing
-// TODO: now that I know to use the .geo file, make sure I can make the .msh files and .geo files separately
+// TODO: Use the fact that I have a geometries folder now when testing this on the overall mesh
 // TODO: make node portion length optional when building a graph
-// TODO: Add a method, whether it be here or in another file, that either goes from partGeo -> meshParametrization or
+// TODO: Add a method, whether it be here or in another file, that either goes from partGeo -> meshParametrization
 
 // Constructor and Destructor
 GraphMesh::GraphMesh() {
@@ -395,7 +395,7 @@ int GraphMesh::findSharedLine(const std::vector<int>& nodeBoundaryTags, const st
 
 // This function helps to find the two spline curves of an edge, to do so, I assume that since the ends of an edge are
 // lines, the 2 middle curves are made up of splines, or "Nurb" within gmsh
-// TODO: Decide if there are other curve types which I will allow
+// TODO: Decide if there are other curve types which I will allow (thinking not for now)
 std::vector<int> GraphMesh::findSplineCurves(const std::vector<int>& edgeBoundaryTags) {
 
     std::vector<int> splineTags;

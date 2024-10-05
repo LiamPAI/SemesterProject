@@ -1,5 +1,7 @@
 import torch
 
+# TODO: Create a function that analyzes the results from the data using tags
+
 def main():
     # PyTorch version and CUDA availability
     print(f"PyTorch version: {torch.__version__}")

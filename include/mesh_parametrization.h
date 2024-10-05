@@ -40,14 +40,12 @@ struct calculationParams {
     }
 };
 
-// TODO: Consider calling meshParamValidator when initializing a MeshParametrizationData object (thinking not)
 struct MeshParametrizationData {
     int numBranches{};
     Eigen::MatrixXd widths;
     Eigen::MatrixXd terminals;
     Eigen::MatrixXd vectors;
 
-    // TODO: Decide if this default constructor should actually be here
     MeshParametrizationData() = default;
 
     MeshParametrizationData(int num, Eigen::MatrixXd w, Eigen::MatrixXd t, Eigen::MatrixXd v)

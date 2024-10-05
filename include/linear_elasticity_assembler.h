@@ -4,10 +4,8 @@
 #ifndef GETTINGSTARTED_LINEAR_ELASTICITY_ASSEMBLER_H
 #define GETTINGSTARTED_LINEAR_ELASTICITY_ASSEMBLER_H
 
-#include <lf/assemble/assemble.h>
 #include <lf/assemble/assemble_concepts.h>
 
-// TODO: This header file contains function implementations, very likely I need to move these to a .cc file
 namespace LinearElasticityAssembler {
 
     template<typename TMPMATRIX, lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>

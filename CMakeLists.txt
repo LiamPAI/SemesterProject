@@ -95,7 +95,7 @@ target_link_libraries(test_mesh_parametrization PRIVATE
 )
 
 add_executable(test_data_operations
-        test/test_data_operations.cpp
+        test/test_data_operations.cc
         ${SOURCES})
 
 target_include_directories(test_data_operations PRIVATE

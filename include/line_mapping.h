@@ -8,8 +8,6 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
-// TODO: Comment all this code with viable descriptions
-// TODO: Perhaps add to this code so that it can easily give displacement BCs for splines as well in gmsh
 // The purpose of this class is to map points from one line to another line, which serves to provide the displacement
 // boundary conditions on a mesh parametrization
 

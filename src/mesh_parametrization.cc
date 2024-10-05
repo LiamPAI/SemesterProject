@@ -6,6 +6,7 @@
 
 #include <linear_matrix_computation.h>
 
+
 // This function ensures the lengths of all vectors are sufficient so we don't run into floating-point errors, returns
 // true if all vectors are of sufficient length and false otherwise
 bool MeshParametrization::checkVectorLengths(const Eigen::MatrixXd &vectors){
@@ -218,7 +219,7 @@ bool MeshParametrization::intersectionBranches(const Eigen::MatrixXd &poly_point
 bool MeshParametrization::selfIntersection(const Eigen::MatrixXd &poly_points) {
 
     // If the poly_points do not satisfy our shape requirements, we immediately return false
-    if (poly_points.rows() % 4 == 0 or poly_points.cols() != 3) {
+    if (poly_points.rows() % 4 != 0 or poly_points.cols() != 3) {
         return false;
     }
 
@@ -327,7 +328,6 @@ std::optional<Eigen::VectorXi> MeshParametrization::connectionPoints(MeshParamet
     return connections;
 }
 
-// TODO: Test this function with a multi-branch parametrization
 // This function uses the helper functions above to determine if a parametrization is valid, returns true if
 // it is and false otherwise
 // Criteria that are checked:
@@ -349,7 +349,7 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
         Eigen::MatrixXd poly_points = polynomialPoints(param);
 
         // If any of the validating functions return false, then the parametrization is invalid and we return false
-        if (!(angleVectors(param) and intersectionVectors(param) and selfIntersection(poly_points))){
+        if (!(angleVectors(param) and intersectionVectors(param) and selfIntersection(poly_points))) {
             return false;
         }
     }
@@ -358,7 +358,9 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
     // the multiple branches don't intersect each other
     else if (param.numBranches >= 3) {
         // We first call connectionPoints to make sure that the points correctly overlap, otherwise return false
-        if (connectionPoints(param) == std::nullopt) return false;
+        if (connectionPoints(param) == std::nullopt) {
+            return false;
+        }
 
         Eigen::MatrixXd poly_points = polynomialPoints(param);
 
@@ -487,7 +489,7 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
             gmsh::model::geo::synchronize();
             // Add the line that will contain a displacement BC and the center line
             center_lines[branch] = std::pair(l1, std::pair(points[0], points[3]));
-            line_tags[branch] = l1;
+            line_tags[branch] = l2;
             surface_tags[branch] = pl1;
         }
 
@@ -683,12 +685,13 @@ bool MeshParametrization::elasticRegion(const Eigen::MatrixXd &stresses, double 
         double von_mises = std::sqrt(sigma_xx*sigma_xx + sigma_yy*sigma_yy
                                     - sigma_xx*sigma_yy + 3*sigma_xy*sigma_xy);
 
-        if (von_mises > yieldStrength) return false;
+        if (von_mises > yieldStrength) {
+            return false;
+        }
     }
     return true;
 }
 
-// TODO: test this with a multi-branch parametrization
 // This function takes in a parametrization and a vector of displacements representing boundary conditions and returns
 // the energy difference for the finite element calculation. Note that displacement has shape (4 * numBranches)
 // by 1 if a multi branch, 2 if a single branch

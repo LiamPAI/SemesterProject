@@ -15,8 +15,6 @@
 #include "../include/parametric_matrix_computation.h"
 #include "../include/graph_mesh.h"
 
-// TODO: Clean up this code, as it is the primary code I'd like to use for testing all functions
-// TODO: Write testing functions to ensure that all code in mesh_parametrization.cc is correct
 
 // This file contains various methods to ensure the correctness of linear_matrix_computation and parametric_matrix_computation
 

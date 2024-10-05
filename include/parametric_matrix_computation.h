@@ -90,7 +90,6 @@ namespace ParametricMatrixComputation {
         : bd_flags(std::move(bd_flags)), traction_(std::move(traction)), body_f(std::move(body)) {}
 
 
-        //TODO: implement the capability for there to be a traction BC and displacement BC on the same node?
         //Return the value at bd_flags for edges, and if there is no body force, don't loop over cells
         bool isActive (const lf::mesh::Entity &entity) {
             const lf::base::RefEl ref_el (entity.RefEl());

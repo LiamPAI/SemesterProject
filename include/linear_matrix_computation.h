@@ -53,7 +53,6 @@ namespace LinearMatrixComputation {
         //for the stress and strains at the element's respective nodes
         std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrain(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);
 
-        // TODO: Implement this method
         // The purpose of this method is to calculate the energy of a cell once we have obtained the displacement vector
         // Note this method will use stressStrain as part of its calculation
         double energyCalc(const lf::mesh::Entity &cell, Eigen::VectorXd &disp, const lf::assemble::DofHandler &dofh);

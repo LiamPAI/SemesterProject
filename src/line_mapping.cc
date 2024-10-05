@@ -4,9 +4,7 @@
 
 #include "../include/line_mapping.h"
 #include <cmath>
-#include <utility>
 
-// TODO: Comment all this code with viable descriptions
 
 // Constructor
 LineMapping::LineMapping(Eigen::Vector2d a, Eigen::Vector2d b, Eigen::Vector2d c, Eigen::Vector2d d)
@@ -14,29 +12,30 @@ LineMapping::LineMapping(Eigen::Vector2d a, Eigen::Vector2d b, Eigen::Vector2d c
     computeTransformationMatrix();
 }
 
-// This function computes the necessary transformation matrix to map points from one line to another
+// This function computes the necessary transformation matrix to map points from one line to another, useful for
+// calculating displacement boundary conditions
 void LineMapping::computeTransformationMatrix() {
-    Eigen::Vector2d oldVec = leftEnd - leftStart;
-    Eigen::Vector2d newVec = rightEnd - rightStart;
+    Eigen::Vector2d old_vec = leftEnd - leftStart;
+    Eigen::Vector2d new_vec = rightEnd - rightStart;
 
     // Create a 2x2 matrix that maps the old vector to the new vector
     Eigen::Matrix2d A;
-    A.col(0) = oldVec;
-    A.col(1) = Eigen::Vector2d(-oldVec.y(), oldVec.x());
+    A.col(0) = old_vec;
+    A.col(1) = Eigen::Vector2d(-old_vec.y(), old_vec.x());
 
     Eigen::Matrix2d B;
-    B.col(0) = newVec;
-    B.col(1) = Eigen::Vector2d(-newVec.y(), newVec.x());
+    B.col(0) = new_vec;
+    B.col(1) = Eigen::Vector2d(-new_vec.y(), new_vec.x());
 
-    Eigen::Matrix2d linearTransform = B * A.inverse();
+    Eigen::Matrix2d linear_transform = B * A.inverse();
 
     // Create the full 3x3 transformation matrix
     transformationMatrix = Eigen::Matrix3d::Identity();
-    transformationMatrix.block<2,2>(0,0) = linearTransform;
-    transformationMatrix.block<2,1>(0,2) = rightStart - linearTransform * leftStart;
+    transformationMatrix.block<2,2>(0,0) = linear_transform;
+    transformationMatrix.block<2,1>(0,2) = rightStart - linear_transform * leftStart;
 }
 
-// Use the transformation matrix to map the point
+// Use the transformation matrix to map the point to the new line
 Eigen::Vector2d LineMapping::mapPoint(const Eigen::Vector2d& point) const {
     Eigen::Vector3d homogeneous(point[0], point[1], 1);
     Eigen::Vector3d transformed = transformationMatrix * homogeneous;
@@ -53,19 +52,20 @@ void LineMapping::update(const Eigen::Vector2d& a, const Eigen::Vector2d& b,
     computeTransformationMatrix();
 }
 
-// Calculates the distance of a point to a line
+// Calculates the distance of a point to a line, useful to check if the point in question as actually
+// on the line we're interested in
 double LineMapping::distanceToLine(const Eigen::Vector2d& point, const Eigen::Vector2d& lineStart, const Eigen::Vector2d& lineEnd) const {
     Eigen::Vector2d line = lineEnd - lineStart;
-    Eigen::Vector2d pointVector = point - lineStart;
-    double lineLengthSquared = line.squaredNorm();
+    Eigen::Vector2d point_vector = point - lineStart;
+    double line_length_squared = line.squaredNorm();
 
     // Point-to-point distance if line has zero length
-    if (lineLengthSquared == 0.0) {
-        return pointVector.norm();
+    if (line_length_squared == 0.0) {
+        return point_vector.norm();
     }
 
     // Calculate the projection of pointVector onto the line
-    double t = pointVector.dot(line) / lineLengthSquared;
+    double t = point_vector.dot(line) / line_length_squared;
 
     if (t < 0.0) {
         return (point - lineStart).norm();
@@ -145,7 +145,7 @@ bool LineMapping::linesIntersectWithoutEnds() const
             if (t0 > t1) std::swap(t0, t1);
 
             // Check if overlap exists and is not just at endpoints
-            return t0 < 1 && t1 > 0 && !(std::abs(t0) < 1e-9 || std::abs(t1 - 1) < 1e-9);
+            return t0 < 1 - 1e-8 && t1 > 1e-8 && !(std::abs(t0) < 1e-8 || std::abs(t1 - 1) < 1e-8);
         }
         return false;
     }
@@ -156,7 +156,7 @@ bool LineMapping::linesIntersectWithoutEnds() const
     double s = (diff.x() * v1.y() - diff.y() * v1.x()) / det;
 
     // If the parameters are on the interval [0, 1], then the lines intersect
-    return (t > 0 and t < 1 and s > 0 and s < 1);
+    return (t > 1e-8 and t < 1 - 1e-8 and s > 1e-8 and s < 1 - 1e-8);
 }
 
 

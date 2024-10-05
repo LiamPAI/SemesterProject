@@ -4,7 +4,6 @@
 
 #include "../include/mesh_parametrization.h"
 
-// TODO: Perhaps comment all of these functions so we know what type of parametrizations are being built
 
 void test_checkVectorLengths() {
     Eigen::MatrixXd test_vectors(2, 3);
@@ -307,12 +306,6 @@ void test_connectionPoints() {
     assert(!connections2.has_value());
 }
 
-// TODO: test this with a simple single and multi-branch parametrization
-void test_meshParamValidator() {
-
-}
-
-
 void test_generateMesh() {
     // Initialize the necessary matrices for the single branch and test it
     Eigen::MatrixXd single_vectors(2,3);
@@ -575,7 +568,6 @@ int main()
     test_intersectionBranches();
     test_selfIntersection();
     test_connectionPoints();
-    test_meshParamValidator();
     test_generateMesh();
     test_displacementBC();
     test_fixFlaggedSolutionComponentsLE();
