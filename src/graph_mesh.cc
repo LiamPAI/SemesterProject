@@ -23,7 +23,10 @@
 // TODO: Delete all print statements once done testing
 // TODO: Use the fact that I have a geometries folder now when testing this on the overall mesh
 // TODO: make node portion length optional when building a graph
-// TODO: Add a method, whether it be here or in another file, that either goes from partGeo -> meshParametrization
+// TODO: Add a method, whether it be here or in another file, that goes from partGeo -> meshParametrization,
+//  and make sure that this function holds all the compatibility conditions in some ordered way
+// TODO: Create a method that does from a displacement vector for a certain parametrization and finds the
+//  corresponding displacement from the FEM calculation
 
 // Constructor and Destructor
 GraphMesh::GraphMesh() {

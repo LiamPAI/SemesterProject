@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <gmsh.h>
 
+
 // This file will contain the structure of the primary class I will use to hold the lower dimensional mesh
 // The class will consist of terminal points (3 per "branch"), a width for each branch, and a vector for the direction of each terminal point
 // It will also contain helper functions to ensure that a given parametrization is valid

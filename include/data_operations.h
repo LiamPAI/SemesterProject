@@ -127,6 +127,18 @@ struct GenerationParams {
     unsigned seed;
     std::mt19937 rng;
 
+    GenerationParams()
+        : datasetSize(0), numBranches(0),
+          lengthInterval(0.0, 0.0), widthInterval(0.0, 0.0),
+          flipParams(0.0, 0), dataRotationParams(0.0, 0.0),
+          modulusOfElasticity(0.0), poissonRatio(0.0), yieldStrength(0.0),
+          numPerturbations(0), perturbProbability(0.0),
+          width_perturb(0.0, 0.0), vector_perturb(0.0, 0.0), terminal_perturb(0.0, 0.0),
+          numDisplacements(0), percentYieldStrength(0.0), displaceProbability(0.0),
+          meshSize(0.0), order(0),
+          seed(std::chrono::system_clock::now().time_since_epoch().count()),
+          rng(seed) {}
+
     GenerationParams(int size, int numB, std::pair<double, double> lenInterval, std::pair<double, double> widInterval,
                      std::pair<double, int> flipP, std::pair<double, double> dataRotP, double modulus, double poisson,
                      double yieldStren, int numPer, double perProb, std::pair<double, double> widPer,

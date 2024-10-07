@@ -1,23 +1,11 @@
 import torch
+import sys
+sys.path.append("/Users/liamcurtis/Documents/ETH Classes/Winter 2024/Semester Project/Sem_Project_LC/cmake-build-debug/python")
+import metal_foams
 
-# TODO: Create a function that analyzes the results from the data using tags
-
-def main():
-    # PyTorch version and CUDA availability
-    print(f"PyTorch version: {torch.__version__}")
-    print(f"CUDA available: {torch.cuda.is_available()}")
-
-    # Simple PyTorch operation
-    x = torch.rand(5, 3)
-    print("Random tensor:")
-    print(x)
-
-    # Test GPU if available
-    if torch.cuda.is_available():
-        print("Testing GPU:")
-        device = torch.device("cuda")
-        y = torch.rand(5, 3).to(device)
-        print(y)
 
 if __name__ == "__main__":
-    main()
+    params = metal_foams.GenerationParams()
+    params.datasetSize = 100
+    params.numBranches = 5
+    print(params.datasetSize)

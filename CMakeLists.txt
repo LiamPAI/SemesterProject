@@ -18,7 +18,7 @@ HunterGate(
 ### Setup CMake Project ###
 project(MetalFoams)
 
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 3.12 COMPONENTS Interpreter Development REQUIRED)
 
 # Find GMSH
 set(GMSH_ROOT "/opt/homebrew/Cellar/gmsh/4.13.1_1")
@@ -34,6 +34,9 @@ hunter_add_package(lehrfempp)
 find_package(lehrfempp CONFIG REQUIRED)
 
 hunter_add_package(ZLIB)
+
+# Add pybind11
+add_subdirectory(pybind11)
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
@@ -115,5 +118,33 @@ target_link_libraries(test_data_operations PRIVATE
         LF::lf.uscalfe
 )
 
+# Python module
+pybind11_add_module(metal_foams_py src/bindings.cc ${SOURCES})
+target_include_directories(metal_foams_py PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${GMSH_INCLUDE_DIR})
+target_link_libraries(metal_foams_py PRIVATE
+        LF::lf.base
+        LF::lf.assemble
+        LF::lf.fe
+        LF::lf.geometry
+        LF::lf.io
+        ${GMSH_LIBRARY}
+        LF::lf.mesh
+        LF::lf.quad
+        LF::lf.refinement
+        LF::lf.uscalfe
+)
+
+# Set the output name of the module
+set_target_properties(metal_foams_py PROPERTIES OUTPUT_NAME "metal_foams")
+
+# Install the module
+install(TARGETS metal_foams_py
+        LIBRARY DESTINATION ${CMAKE_BINARY_DIR}/python
+        RUNTIME DESTINATION ${CMAKE_BINARY_DIR}/python)
+
 file(GLOB PYTHON_SCRIPTS "python/*.py")
 file(COPY ${PYTHON_SCRIPTS} DESTINATION ${CMAKE_BINARY_DIR}/python)
+add_custom_command(TARGET metal_foams_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:metal_foams_py> ${CMAKE_BINARY_DIR}/python)
