@@ -14,6 +14,8 @@
 #include <unordered_set>
 #include <fstream>
 #include <stdexcept>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 // The purpose of this file is to introduce the data structures and methods required to generate, save, and manipulate
 // the parametrization datasets for the NNs to be trained on, the goal is for the datasets to be relatively
@@ -127,18 +129,6 @@ struct GenerationParams {
     unsigned seed;
     std::mt19937 rng;
 
-    GenerationParams()
-        : datasetSize(0), numBranches(0),
-          lengthInterval(0.0, 0.0), widthInterval(0.0, 0.0),
-          flipParams(0.0, 0), dataRotationParams(0.0, 0.0),
-          modulusOfElasticity(0.0), poissonRatio(0.0), yieldStrength(0.0),
-          numPerturbations(0), perturbProbability(0.0),
-          width_perturb(0.0, 0.0), vector_perturb(0.0, 0.0), terminal_perturb(0.0, 0.0),
-          numDisplacements(0), percentYieldStrength(0.0), displaceProbability(0.0),
-          meshSize(0.0), order(0),
-          seed(std::chrono::system_clock::now().time_since_epoch().count()),
-          rng(seed) {}
-
     GenerationParams(int size, int numB, std::pair<double, double> lenInterval, std::pair<double, double> widInterval,
                      std::pair<double, int> flipP, std::pair<double, double> dataRotP, double modulus, double poisson,
                      double yieldStren, int numPer, double perProb, std::pair<double, double> widPer,
@@ -202,6 +192,58 @@ struct GenerationParams {
         LF_ASSERT_MSG(meshSize > 1e-6, "Inavlid mesh size sent to Generation Params, " << meshSize);
         LF_ASSERT_MSG(order == 1 or order == 2, "Invalid order sent to Generation Params, " << order);
     }
+
+    // The following two methods are included so that we can save the generation params when creating a neural network
+    [[nodiscard]] pybind11::dict to_dict() const {
+        pybind11::dict d;
+        d["datasetSize"] = datasetSize;
+        d["numBranches"] = numBranches;
+        d["lengthInterval"] = lengthInterval;
+        d["widthInterval"] = widthInterval;
+        d["flipParams"] = flipParams;
+        d["dataRotationParams"] = dataRotationParams;
+        d["modulusOfElasticity"] = modulusOfElasticity;
+        d["poissonRatio"] = poissonRatio;
+        d["yieldStrength"] = yieldStrength;
+        d["numPerturbations"] = numPerturbations;
+        d["perturbProbability"] = perturbProbability;
+        d["width_perturb"] = width_perturb;
+        d["vector_perturb"] = vector_perturb;
+        d["terminal_perturb"] = terminal_perturb;
+        d["numDisplacements"] = numDisplacements;
+        d["percentYieldStrength"] = percentYieldStrength;
+        d["displaceProbability"] = displaceProbability;
+        d["meshSize"] = meshSize;
+        d["order"] = order;
+        d["seed"] = seed;
+        return d;
+    }
+
+    static GenerationParams from_dict(const pybind11::dict& d) {
+        return {
+            d["datasetSize"].cast<int>(),
+            d["numBranches"].cast<int>(),
+            d["lengthInterval"].cast<std::pair<double, double>>(),
+            d["widthInterval"].cast<std::pair<double, double>>(),
+            d["flipParams"].cast<std::pair<double, int>>(),
+            d["dataRotationParams"].cast<std::pair<double, double>>(),
+            d["modulusOfElasticity"].cast<double>(),
+            d["poissonRatio"].cast<double>(),
+            d["yieldStrength"].cast<double>(),
+            d["numPerturbations"].cast<int>(),
+            d["perturbProbability"].cast<double>(),
+            d["width_perturb"].cast<std::pair<double, double>>(),
+            d["vector_perturb"].cast<std::pair<double, double>>(),
+            d["terminal_perturb"].cast<std::pair<double, double>>(),
+            d["numDisplacements"].cast<int>(),
+            d["percentYieldStrength"].cast<double>(),
+            d["displaceProbability"].cast<double>(),
+            d["meshSize"].cast<double>(),
+            d["order"].cast<int>(),
+            d["seed"].cast<unsigned>()
+        };
+    }
+
 };
 
 // The following struct helps to create perturbations in a base parametrization so we have non-linear parametrizations
@@ -318,7 +360,7 @@ namespace DataOperations {
     MeshParametrizationData generateMultiBranchParametrization(int num,
         const Eigen::VectorXd &widths, const Eigen::VectorXd &lengths);
 
-    ParametrizationDataSet generateParametrizationDataSet(GenerationParams &gen_params);
+    ParametrizationDataSet generateParametrizationDataSet(GenerationParams &gen_params, bool verbose = false);
     PointDataSet parametrizationToPoint(ParametrizationDataSet &param_dataset);
 
     void saveMeshParametrizationData(std::ofstream &file, const MeshParametrizationData &param);

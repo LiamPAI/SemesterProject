@@ -159,8 +159,6 @@ bool LineMapping::linesIntersectWithoutEnds() const
     return (t > 1e-8 and t < 1 - 1e-8 and s > 1e-8 and s < 1 - 1e-8);
 }
 
-
-
 // This function returns the acute angle between two lines in units of degrees, using the properties of dot product
 double LineMapping::angleBetweenLines() const
 {

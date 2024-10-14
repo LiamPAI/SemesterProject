@@ -3,9 +3,11 @@
 //
 
 #include "../include/graph_mesh.h"
+
 #include <gmsh.h>
 #include <iostream>
 #include <filesystem>
+#include <unordered_set>
 
 // The following are helpers function that aid in the building of the "graph" for the mesh the NN is attempting to
 // find the minimization energy for. The following spits the mesh into 2D edges and nodes through a labelling system
@@ -21,12 +23,7 @@
 //      curves making up the middle portion of an edge must be a spline
 
 // TODO: Delete all print statements once done testing
-// TODO: Use the fact that I have a geometries folder now when testing this on the overall mesh
 // TODO: make node portion length optional when building a graph
-// TODO: Add a method, whether it be here or in another file, that goes from partGeo -> meshParametrization,
-//  and make sure that this function holds all the compatibility conditions in some ordered way
-// TODO: Create a method that does from a displacement vector for a certain parametrization and finds the
-//  corresponding displacement from the FEM calculation
 
 // Constructor and Destructor
 GraphMesh::GraphMesh() {
@@ -34,7 +31,9 @@ GraphMesh::GraphMesh() {
 }
 
 GraphMesh::~GraphMesh() {
-    gmsh::finalize();
+    if (gmsh::isInitialized()) {
+        gmsh::finalize();
+    }
 }
 
 // Checking methods depending on N, NB, E, or EB labels
@@ -87,6 +86,16 @@ void GraphMesh::loadMeshFromFile(const std::string& filename) {
     } catch (const std::runtime_error& e) {
         std::cerr << "Error loading mesh file: " << e.what() << std::endl;
         throw;
+    }
+}
+
+void GraphMesh::closeMesh() {
+    try {
+        gmsh::clear();
+        gmsh::finalize();
+    }
+    catch (const std::runtime_error &e) {
+        std::cerr << "Gmsh error: " << e.what() << std::endl;
     }
 }
 
@@ -213,18 +222,20 @@ PartGraph GraphMesh::splitMesh(double targetPartSize, double nodeEdgePortion = 0
         for (int edgeId : node.connectedEdges) {
             std::cout << "    Processing connected edge " << edgeId << std::endl;
 
-            // We determine what portion of the connected edge we want depending on if it is the first node
+            // We determine what portion of the connected edge we want depending on if it is the first node,
+            // making sure, for later connection reasons, that we go from the node outwards
             const auto& edge = edges[edgeId];
             bool isFirstNode = (edge.connectedNodes[0] == nodeId);
-            double startPortion = isFirstNode ? 0.0 : (1.0 - nodeEdgePortion);
-            double endPortion = isFirstNode ? nodeEdgePortion : 1.0;
+            double startPortion = isFirstNode ? 0.0 : 1.0;
+            double endPortion = isFirstNode ? nodeEdgePortion : (1.0 - nodeEdgePortion);
             part.connectedEdges.emplace_back(edgeId,std::make_pair(startPortion, endPortion));
             connectedEdgeTags.push_back(edgeId);
 
             // Find the spline curves for this connected edge
-            // TODO: decide if I want to assert that splineTags must be of size 2, which I think I want to do
             std::vector<int> splineTags = findSplineCurves(edge.boundaryTags);
             std::cout << "    Found " << splineTags.size() << " spline tags for edge " << edgeId << std::endl;
+            LF_ASSERT_MSG(splineTags.size() == 2, "The spline tags returned for edge with id " << edgeId <<
+                " returned " << splineTags.size() << " splines, when it should return 2");
 
             // For the splines we want to interpolate from, we add the tag, their orientation, and portion to curveTags
             if (splineTags.size() == 2) {
@@ -235,8 +246,14 @@ PartGraph GraphMesh::splitMesh(double targetPartSize, double nodeEdgePortion = 0
                 if (sharedLineTag != -1) {
                     for (int splineTag : splineTags) {
                         int orientation = determineSplineOrientation(splineTag, sharedLineTag);
-                        std::cout << "    Spline tag: " << splineTag << ", Orientation: " << orientation << " , startPortion: " << startPortion << ", endPortion: " << endPortion << std::endl;
-                        part.curveTags.emplace_back(splineTag, orientation, std::make_pair(startPortion, endPortion));
+                        if (isFirstNode) {
+                            std::cout << "    Spline tag: " << splineTag << ", Orientation: " << orientation << " , startPortion: " << startPortion << ", endPortion: " << endPortion << std::endl;
+                            part.curveTags.emplace_back(splineTag, orientation, std::make_pair(startPortion, endPortion));
+                        }
+                        else {
+                            std::cout << "    Spline tag: " << splineTag << ", Orientation (switched): " << -orientation << " , startPortion: " << startPortion << ", endPortion: " << endPortion << std::endl;
+                            part.curveTags.emplace_back(splineTag, -orientation, std::make_pair(startPortion, endPortion));
+                        }
                     }
                 }
             }
@@ -398,7 +415,6 @@ int GraphMesh::findSharedLine(const std::vector<int>& nodeBoundaryTags, const st
 
 // This function helps to find the two spline curves of an edge, to do so, I assume that since the ends of an edge are
 // lines, the 2 middle curves are made up of splines, or "Nurb" within gmsh
-// TODO: Decide if there are other curve types which I will allow (thinking not for now)
 std::vector<int> GraphMesh::findSplineCurves(const std::vector<int>& edgeBoundaryTags) {
 
     std::vector<int> splineTags;
@@ -442,19 +458,343 @@ int GraphMesh::determineSplineOrientation(int splineTag, int sharedLineTag) {
     // Check if the start point of the spline is on the shared line, then it is oriented in the way we want
     bool splineStartOnLine = (splinePoints[0].second == linePoints[0].second) ||
             (splinePoints[0].second == linePoints[1].second);
-
     return splineStartOnLine ? 1 : -1;
 }
 
-// TODO: Once tested, convert these parts so that Eigen Matrices are given, perhaps in a separate function
-std::vector<std::vector<double>> GraphMesh::getPartGeometry(const MeshPart& part) {
+// This function takes in a graph of parts and returns the corresponding vector of polynomial points in the same order
+// as defined in the parts vector of PartGraph, note that since this comes from the part_graph, and call
+// getPartGeometry, that these are the exact points of the geometry file, which may not be nodes of the actual mesh
+std::vector<Eigen::MatrixXd> GraphMesh::getGeometryPolynomialPoints(const PartGraph &part_graph) {
+    std::vector<Eigen::MatrixXd> points_vector;
+    for (const auto& part : part_graph.parts) {
+        auto geometry = getPartGeometry(part);
+        points_vector.push_back(geometry);
+    }
+    return points_vector;
+}
+
+// This function takes in a part_graph and the file name to the corresponding mesh that generated our partGraph,
+// and returns the actual polynomial points of the mesh, which will correspond to the closest nodes on the mesh,
+// and we can therefore easily compare displacement vectors, it also returns the indices of the nodes we used
+std::pair<std::vector<Eigen::MatrixXd>, std::vector<Eigen::MatrixXi>> GraphMesh::getMeshPolynomialPoints(
+    const PartGraph &part_graph, const std::string &mesh_file_name, int order) {
+
+    // We next read the mesh file name into LehrFEM to easily retrieve the nodes and their coordinates
+    auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
+    std::filesystem::path project_root = std::filesystem::current_path().parent_path();
+    std::filesystem::path mesh_dir = project_root / "meshes";
+    std::filesystem::path full_path = mesh_dir / (mesh_file_name + ".msh");
+
+    lf::io::GmshReader reader(std::move(factory), full_path);
+    const std::shared_ptr<lf::mesh::Mesh> mesh_ptr = reader.mesh();
+    const lf::mesh::Mesh &mesh {*mesh_ptr};
+
+    std::shared_ptr<lf::uscalfe::UniformScalarFESpace<double>> fe_space;
+    if (order == 1) {
+        fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO1<double>>(mesh_ptr);
+    }
+    else if (order == 2) {
+        fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO2<double>>(mesh_ptr);
+    }
+    else {
+        LF_ASSERT_MSG(false, "Incorrect order sent to getMeshPolynomialPoints: " << order);
+    }
+    const lf::assemble::DofHandler &dofh {fe_space->LocGlobMap()};
+
+    std::vector<Eigen::MatrixXd> geom_poly_points = getGeometryPolynomialPoints(part_graph);
+    std::vector<Eigen::MatrixXd> mesh_poly_points;
+    std::vector<Eigen::MatrixXi> mesh_node_indices;
+
+    // Iterate through all point matrices
+    for (const auto &points : geom_poly_points) {
+        int num_points = points.rows() / 2 * 3;
+        Eigen::MatrixXd mesh_points(points.rows(), points.cols());
+        Eigen::MatrixXi mesh_indices(points.rows() / 2, points.cols());
+
+        // Iterate through all points of this particular matrix
+        for (int i = 0; i < num_points; ++i) {
+            double closest_distance = std::numeric_limits<double>::max();
+            Eigen::Vector2d closest_point = Eigen::Vector2d::Constant(std::numeric_limits<double>::max());
+            auto current_point = points.block<2, 1>(i / 3 * 2, i % 3);
+            int current_index = -1;
+
+            // Iterate through all nodes of the mesh to find the closest one
+            for (const lf::mesh::Entity *node : mesh.Entities(2)) {
+                auto possible_point = node->Geometry()->Global(node->RefEl().NodeCoords());
+                double new_distance = (possible_point - current_point).norm();
+                if (new_distance < closest_distance) {
+                    closest_distance = new_distance;
+                    closest_point = possible_point;
+                    current_index = dofh.GlobalDofIndices(*node)[0];
+                }
+            }
+            mesh_points.block<2, 1>(i / 3 * 2, i % 3) = closest_point;
+            mesh_indices(i / 3, i % 3) = current_index;
+        }
+        mesh_poly_points.push_back(mesh_points);
+        mesh_node_indices.push_back(mesh_indices);
+    }
+    return {mesh_poly_points, mesh_node_indices};
+}
+
+// This function takes in a graph of parts and returns the corresponding vector of parametrizations in the same order
+// as defined in the parts vector of PartGraph, note these are the true parametrizations, as they were obtained
+// from the .geo file
+std::vector<MeshParametrizationData> GraphMesh::getGeometryParametrizations(const PartGraph &part_graph) {
+    std::vector<MeshParametrizationData> params_vector;
+
+    for (const auto& part : part_graph.parts) {
+        auto geometry = getPartGeometry(part);
+        auto parametrization = MeshParametrization::pointToParametrization(geometry);
+        params_vector.push_back(parametrization);
+    }
+    return params_vector;
+}
+
+// This function takes in a graph of parts, a file name, and an order and outputs the corresponding vector of
+// parametrizations on the actual mesh, where the points used to determine these parametrizations are the actual
+// nodes on the mesh
+std::vector<MeshParametrizationData> GraphMesh::getMeshParametrizations(const PartGraph &part_graph,
+    const std::string &mesh_file_name, int order) {
+
+    std::vector<MeshParametrizationData> params_vector;
+    auto [mesh_point_vector, mesh_node_vector] = getMeshPolynomialPoints(part_graph, mesh_file_name, order);
+
+    for (const auto& points : mesh_point_vector) {
+        auto parametrization = MeshParametrization::pointToParametrization(points);
+        params_vector.push_back(parametrization);
+    }
+    return params_vector;
+}
+
+// This function takes in a vector of parametrizations represented by their points, and returns the same vector of parametrizations,
+// but with each parametrization centered around the origin so that they are normalized for the NN
+std::vector<Eigen::MatrixXd> GraphMesh::centerPointParametrizations(const std::vector<Eigen::MatrixXd> &point_vector) {
+    std::vector<Eigen::MatrixXd> centered_point_vector;
+
+    for (const auto &points : point_vector) {
+        Eigen::Vector2d center = DataOperations::findCenter(MeshParametrization::pointToParametrization(points));
+        Eigen::MatrixXd centered_points (points);
+        for (int i = 0; i < points.rows() / 2; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                centered_points.block<2, 1>(2 * i, j) =
+                    centered_points.block<2, 1>(2 * i, j) - center;
+            }
+        }
+        centered_point_vector.push_back(centered_points);
+    }
+    return centered_point_vector;
+}
+
+// This function takes in a vector of MeshParametrizationData and returns the same vector but with each parametrization
+// centered around the origin, so that they are "normalized" for the NN
+std::vector<MeshParametrizationData> GraphMesh::centerMeshParametrizations(
+    const std::vector<MeshParametrizationData> &param_vector) {
+    std::vector<MeshParametrizationData> centered_param_vector;
+    for (const auto &param : param_vector) {
+        Eigen::Vector2d center = DataOperations::findCenter(param);
+        MeshParametrizationData centered_param (param);
+        for (int i = 0; i < param.numBranches; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                centered_param.terminals.block<2, 1>(2 * i, j) =
+                    centered_param.terminals.block<2, 1>(2 * i, j) - center;
+            }
+        }
+        centered_param_vector.push_back(centered_param);
+    }
+    return centered_param_vector;
+}
+
+// This function takes in a graph of our parts and returns training parameters for the neural network, such as the
+// range to train for widths, lengths, angles, and so on
+NNTrainingParams GraphMesh::getNNTrainingParams(const PartGraph &part_graph) {
+    auto params_vector = getGeometryParametrizations(part_graph);
+    double min_length = std::numeric_limits<double>::max();
+    double max_length = 0;
+    double min_width = std::numeric_limits<double>::max();
+    double max_width = 0;
+    double min_width_diff = std::numeric_limits<double>::max();
+    double max_width_diff = 0;
+    double min_angle_diff = std::numeric_limits<double>::max();
+    double max_angle_diff = 0;
+
+    for (auto param : params_vector) {
+        double approx_length;
+        Eigen::Vector2d zeros = Eigen::Vector2d::Zero();
+        if (param.numBranches == 1) {
+            approx_length = (param.terminals.block<2 ,1>(0, 1) -
+                    param.terminals.block<2 ,1>(0, 0)).norm() +
+                    (param.terminals.block<2 ,1>(0, 2) -
+                   param.terminals.block<2 ,1>(0, 1)).norm();
+
+            if (approx_length > max_length) max_length = approx_length;
+            if (approx_length < min_length) min_length = approx_length;
+
+            min_width_diff = std::min(std::min(std::abs(param.widths(0, 0) / param.widths(0, 1) - 1),
+                std::abs(param.widths(0, 1) / param.widths(0, 2) - 1)),
+                std::min(std::abs(param.widths(0, 0) / param.widths(0, 2) - 1), min_width_diff));
+            max_width_diff = std::max(std::max(std::abs(param.widths(0, 0) / param.widths(0, 1) - 1),
+                std::abs(param.widths(0, 1) / param.widths(0, 2) - 1)),
+                std::max(std::abs(param.widths(0, 0) / param.widths(0, 2) - 1), max_width_diff));
+
+            LineMapping vectors0_and_1(zeros, param.vectors.col(0), zeros, param.vectors.col(1));
+            LineMapping vectors1_and_2(zeros, param.vectors.col(1), zeros, param.vectors.col(2));
+            LineMapping vectors0_and_2(zeros, param.vectors.col(0), zeros, param.vectors.col(2));
+
+            min_angle_diff = std::min(std::min(vectors0_and_1.angleBetweenLines(), vectors1_and_2.angleBetweenLines()),
+                std::min(vectors0_and_2.angleBetweenLines(), min_angle_diff));
+            max_angle_diff = std::max(std::max(vectors0_and_1.angleBetweenLines(), vectors1_and_2.angleBetweenLines()),
+                std::max(vectors0_and_2.angleBetweenLines(), max_angle_diff));
+        }
+        else {
+            for (int i = 0; i < param.numBranches; ++i) {
+                approx_length = (param.terminals.block<2 ,1>(2 * i, 1) -
+                    param.terminals.block<2 ,1>(2 * i, 0)).norm() +
+                    (param.terminals.block<2 ,1>(2 * i, 2) -
+                    param.terminals.block<2 ,1>(2 * i, 1)).norm();
+
+                if (approx_length > max_length) max_length = approx_length;
+                if (approx_length < min_length) min_length = approx_length;
+
+                min_width_diff = std::min(std::min(std::abs(param.widths(i, 0) / param.widths(i, 1) - 1),
+                std::abs(param.widths(i, 1) / param.widths(i, 2) - 1)),
+                std::min(std::abs(param.widths(i, 0) / param.widths(i, 2) - 1), min_width_diff));
+                max_width_diff = std::max(std::max(std::abs(param.widths(i, 0) / param.widths(i, 1) - 1),
+                    std::abs(param.widths(i, 1) / param.widths(i, 2) - 1)),
+                    std::max(std::abs(param.widths(i, 0) / param.widths(i, 2) - 1), max_width_diff));
+
+                LineMapping vectors0_and_1(zeros, param.vectors.block<2, 1>(2 * i, 0),
+                    zeros, param.vectors.block<2, 1>(2 * i, 1));
+                LineMapping vectors1_and_2(zeros, param.vectors.block<2, 1>(2 * i, 1),
+                    zeros, param.vectors.block<2, 1>(2 * i, 2));
+                LineMapping vectors0_and_2(zeros, param.vectors.block<2, 1>(2 * i, 0),
+                    zeros, param.vectors.block<2, 1>(2 * i, 2));
+
+                min_angle_diff = std::min(std::min(vectors0_and_1.angleBetweenLines(), vectors1_and_2.angleBetweenLines()),
+                    std::min(vectors0_and_2.angleBetweenLines(), min_angle_diff));
+                max_angle_diff = std::max(std::max(vectors0_and_1.angleBetweenLines(), vectors1_and_2.angleBetweenLines()),
+                    std::max(vectors0_and_2.angleBetweenLines(), max_angle_diff));
+            }
+        }
+
+        double min_width_param = param.widths.minCoeff();
+        double max_width_param = param.widths.maxCoeff();
+
+        if (min_width_param < min_width) min_width = min_width_param;
+        if (max_width_param > max_width) max_width = max_width_param;
+    }
+    return {{min_length, max_length}, {min_width, max_width},
+        {min_width_diff, max_width_diff}, {min_angle_diff, max_angle_diff}};
+}
+
+// This function takes in a PartGraph and returns a vector of all the compatibility conditions in the PartGraph
+std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const PartGraph &part_graph) {
+    std::vector<CompatibilityCondition> compatibility_conditions;
+    std::unordered_set<std::pair<int, int>, IntPairHash, IntPairEqual> processed_conditions;
+
+    // Lambda expression to check if we've already added this condition or not previously
+    auto process_condition = [&processed_conditions](int a, int b) {
+        std::pair<int, int> current_condition = {std::min(a, b), std::max(a, b)};
+        if (processed_conditions.find(current_condition) == processed_conditions.end()) {
+            processed_conditions.insert(current_condition);
+            return true;
+        }
+        return false;
+    };
+
+    for (int i = 0; i < part_graph.parts.size(); i++) {
+        MeshPart part = part_graph.parts[i];
+
+        if (part.type == MeshPart::NODE) {
+            // Need to iterate through all connected parts for this node
+            for (int j = 0; j < part_graph.adjacencyList[i].size(); j++) {
+
+                // If we have not processed this condition yet, we do it now
+                if (process_condition(i, part_graph.adjacencyList[i][j])) {
+
+                    if (part_graph.parts[part_graph.adjacencyList[i][j]].type == MeshPart::NODE) {
+
+                        // Find the position of our node i within the adjacent node's adjacency list
+                        auto it =
+                            std::find(part_graph.adjacencyList[part_graph.adjacencyList[i][j]].begin(),
+                            part_graph.adjacencyList[part_graph.adjacencyList[i][j]].end(), i);
+
+                        LF_ASSERT_MSG(it != part_graph.adjacencyList[part_graph.adjacencyList[i][j]].end(),
+                            "Two nodes are connected in the part graph, but their adjacency lists are incorrect");
+                        int index = std::distance(part_graph.adjacencyList[part_graph.adjacencyList[i][j]].begin(), it);
+
+                        std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
+                        std::pair<int, int> first {j, 2};
+                        std::pair<int, int> second {index, 2};
+                        compatibility_conditions.emplace_back(indices, first, second);
+                    }
+                    else {
+                        // Since this adjacent part is an edge, we must check if the node is first or second in the
+                        // corresponding graph to see which side the equivalent points are on
+                        const auto& edge = edges[part_graph.parts[part_graph.adjacencyList[i][j]].id];
+                        bool is_first_node = (edge.connectedNodes[0] == part_graph.parts[i].id);
+
+                        // Initialize the pairs that will make up this compatibility condition
+                        std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
+                        std::pair<int, int> first {j, 2};
+                        std::pair<int, int> second {0, is_first_node ? 0 : 2};
+                        compatibility_conditions.emplace_back(indices, first, second);
+                    }
+                }
+            }
+        }
+
+        else {
+            // Need to iterate through all connected parts for this node
+            for (int j = 0; j < part_graph.adjacencyList[i].size(); j++) {
+                // If we have not processed this condition yet, we do it now
+                if (process_condition(i, part_graph.adjacencyList[i][j])) {
+
+                    if (part_graph.parts[part_graph.adjacencyList[i][j]].type == MeshPart::NODE) {
+                        auto it =
+                            std::find(part_graph.adjacencyList[part_graph.adjacencyList[i][j]].begin(),
+                            part_graph.adjacencyList[part_graph.adjacencyList[i][j]].end(), i);
+                        LF_ASSERT_MSG(it != part_graph.adjacencyList[part_graph.adjacencyList[i][j]].end(),
+                        "An edge is connected to a node in the part graph, but their adjacency lists are incorrect");
+
+                        int index = std::distance(part_graph.adjacencyList[part_graph.adjacencyList[i][j]].begin(), it);
+                        const auto& edge = edges[part_graph.parts[i].id];
+                        bool is_first_node = (edge.connectedNodes[0] == part_graph.parts[i].id);
+
+                        std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
+                        std::pair<int, int> first {0, is_first_node ? 0 : 2};
+                        std::pair<int, int> second {index, 2};
+                        compatibility_conditions.emplace_back(indices, first, second);
+                    }
+                    else {
+                        bool is_first_part = part_graph.parts[i].subId <
+                            part_graph.parts[part_graph.adjacencyList[i][j]].subId;
+
+                        std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
+                        std::pair<int, int> first {0, is_first_part ? 2 : 0};
+                        std::pair<int, int> second {0, is_first_part ? 0 : 2};
+                        compatibility_conditions.emplace_back(indices, first, second);
+                    }
+                }
+            }
+        }
+    }
+    return compatibility_conditions;
+}
+
+// TODO: Test this guy one more time with a very complicated geometry mesh where there are multiple edges
+//  connected to 2 nodes
+// This function takes in a meshPart and returns a matrix containing the polynomial points of the corresponding
+// parametrization
+Eigen::MatrixXd GraphMesh::getPartGeometry(const MeshPart& part) {
     std::vector<std::vector<double>> geometry;
 
     std::cout << "Debug: Starting getPartGeometry for part type: " << (part.type == MeshPart::NODE ? "NODE" : "EDGE") << std::endl;
 
     // iterate through the curveTags of this part in order to acquire points along the curve
     for (const auto& [curveTag, orientation, portions] : part.curveTags) {
-        std::cout << "Debug: Processing curveTag: " << curveTag << " with orientation: " << orientation << std::endl;
+        std::cout << "Debug: Processing curveTag: " << curveTag << " with orientation: " << orientation
+        << " and portions: [" << portions.first << ", " << portions.second << "]" << std::endl;
 
         std::vector<double> tMin, tMax;
         gmsh::model::getParametrizationBounds(1, curveTag, tMin, tMax);
@@ -493,12 +833,21 @@ std::vector<std::vector<double>> GraphMesh::getPartGeometry(const MeshPart& part
         std::cout << "Debug: End point: (" << endPoint[0] << ", " << endPoint[1] << ", " << endPoint[2] << ")" << std::endl;
     }
 
+    Eigen::MatrixXd poly_points(geometry.size() / 3 * 2, 3);
+
+    for (int i = 0; i < geometry.size() / 3; ++i) {
+        poly_points(2 * i, 0) = geometry[3 * i][0];
+        poly_points(2 * i + 1, 0) = geometry[3 * i][1];
+        poly_points(2 * i, 1) = geometry[3 * i + 1][0];
+        poly_points(2 * i + 1, 1) = geometry[3 * i + 1][1];
+        poly_points(2 * i, 2) = geometry[3 * i + 2][0];
+        poly_points(2 * i + 1, 2) = geometry[3 * i + 2][1];
+    }
     std::cout << "Debug: Finished getPartGeometry. Returned " << geometry.size() << " points." << std::endl;
 
-    return geometry;
+    return poly_points;
 }
 
-// TODO: Decide whether this is the actual way I'd like to choose the "size" of the mesh part, feels inefficient
 double GraphMesh::getEdgeLength(int edgeId) {
 
     // Find the spline curves of this edge
@@ -514,7 +863,6 @@ double GraphMesh::getEdgeLength(int edgeId) {
         std::cout << "For splineTag " << splineTag << " the min params are " << tMin[0] << std::endl;
         std::cout << "For splineTag " << splineTag << " the max params are " << tMax[0] << std::endl;
 
-        // TODO: Decide if I want to adjust this in a customizable way for a better approximation
         const int numSamples = 10; // Adjust this for better approximation
         double splineLength = 0.0;
         std::vector<double> prevPoint;
@@ -622,38 +970,51 @@ void GraphMesh::printMeshGeometry() {
 }
 
 void GraphMesh::buildSplitAndPrintMesh(const std::string& filename, double targetPartSize, double nodeEdgePortion) {
-    // Load the mesh file
     loadMeshFromFile(filename);
 
-    // Build the graph from the mesh
     buildGraphFromMesh();
 
-    // Print the initial graph state
     std::cout << "Initial Graph State:" << std::endl;
     printGraphState();
 
-    // Split the mesh into parts
     PartGraph partGraph = splitMesh(targetPartSize, nodeEdgePortion);
 
-    // Print the split mesh state
     std::cout << "\nSplit Mesh State:" << std::endl;
     printPartGraphState(partGraph);
 
-    // Get and print geometry for each part
     std::cout << "\nPart Geometries:" << std::endl;
+    int count = 0;
     for (const auto& part : partGraph.parts) {
         std::cout << "Part Type: " << (part.type == MeshPart::NODE ? "Node" : "Edge")
-                  << ", ID: " << part.id << ", SubID: " << part.subId << std::endl;
+                  << ", ID: " << part.id << ", SubID: " << part.subId << ", Part Index: " << count << std::endl;
 
         auto geometry = getPartGeometry(part);
-        for (size_t i = 0; i < geometry.size(); ++i) {
-            std::cout << "  Point " << i << ": ("
-                      << geometry[i][0] << ", "
-                      << geometry[i][1] << ", "
-                      << geometry[i][2] << ")" << std::endl;
-        }
+        std::cout << "Value of poly_points is\n" << geometry << std::endl;
         std::cout << std::endl;
+        count++;
     }
+
+    auto training_params = getNNTrainingParams(partGraph);
+    printTrainingParams(training_params);
+
+    auto conditions = getCompatibilityConditions(partGraph);
+    printCompatibilityConditions(conditions);
+
+    auto geom_points = getGeometryPolynomialPoints(partGraph);
+
+    auto [mesh_points, mesh_indices] = getMeshPolynomialPoints(partGraph, "testNE1", 1);
+    printMeshData(geom_points, mesh_points, mesh_indices);
+
+    auto mesh_parametrizations = getMeshParametrizations(partGraph, "testNE1", 1);
+    auto geom_parametrizations = getGeometryParametrizations(partGraph);
+
+    compareMeshParametrizationData(geom_parametrizations, mesh_parametrizations);
+
+    auto centered_mesh_parametrizations = centerMeshParametrizations(mesh_parametrizations);
+    compareMeshParametrizationData(mesh_parametrizations, centered_mesh_parametrizations);
+
+    auto centered_mesh_points = centerPointParametrizations(mesh_points);
+    printMeshData(mesh_points, centered_mesh_points, mesh_indices);
 }
 
 void GraphMesh::printGraphState() {
@@ -701,4 +1062,107 @@ void GraphMesh::printPartGraphState(const PartGraph& partGraph) {
         for (int adj : partGraph.adjacencyList[i]) std::cout << adj << " ";
         std::cout << std::endl;
     }
+}
+
+void GraphMesh::printCompatibilityConditions(const std::vector<CompatibilityCondition> &conditions) {
+    std::cout << "Compatibility Conditions:\n";
+    for (size_t i = 0; i < conditions.size(); ++i) {
+        const auto& condition = conditions[i];
+        std::cout << "Condition " << i + 1 << ":\n";
+        std::cout << "  Indices:         [" << condition.indices.first << ", " << condition.indices.second << "]\n";
+        std::cout << "  First Location:  [Branch: " << condition.firstLocation.first
+                  << ", Side: " << condition.firstLocation.second << "]\n";
+        std::cout << "  Second Location: [Branch: " << condition.secondLocation.first
+                  << ", Side: " << condition.secondLocation.second << "]\n";
+        std::cout << "\n";
+    }
+}
+
+void GraphMesh::printTrainingParams (const NNTrainingParams &params) {
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "NNTrainingParams:\n";
+    std::cout << "  Length range:     [" << params.minMaxLength.first << ", " << params.minMaxLength.second << "]\n";
+    std::cout << "  Width range:      [" << params.minMaxWidth.first << ", " << params.minMaxWidth.second << "]\n";
+    std::cout << "  Width diff range: [" << params.minMaxWidthDiff.first << ", " << params.minMaxWidthDiff.second << "]\n";
+    std::cout << "  Angle diff range: [" << params.minMaxAngleDiff.first << ", " << params.minMaxAngleDiff.second << "]\n";
+}
+
+void GraphMesh::printMeshData(const std::vector<Eigen::MatrixXd>& geom_poly_points,
+        const std::vector<Eigen::MatrixXd>& mesh_poly_points,
+        const std::vector<Eigen::MatrixXi>& mesh_node_indices) {
+
+    for (size_t i = 0; i < geom_poly_points.size(); ++i) {
+        std::cout << "Matrix " << i + 1 << ":" << std::endl;
+        const auto& geom_points = geom_poly_points[i];
+        const auto& mesh_points = mesh_poly_points[i];
+        const auto& indices = mesh_node_indices[i];
+
+        std::cout << std::setw(15) << "Geom X" << std::setw(15) << "Geom Y"
+                  << std::setw(15) << "Mesh X" << std::setw(15) << "Mesh Y"
+                  << std::setw(15) << "Index" << std::setw(15) << "Distance" << std::endl;
+
+        for (int row = 0; row < indices.rows(); ++row) {
+            for (int col = 0; col < indices.cols(); ++col) {
+                double geom_x = geom_points(2*row, col);
+                double geom_y = geom_points(2*row+1, col);
+                double mesh_x = mesh_points(2*row, col);
+                double mesh_y = mesh_points(2*row+1, col);
+
+                double distance = std::sqrt(std::pow(geom_x - mesh_x, 2) + std::pow(geom_y - mesh_y, 2));
+
+                std::cout << std::setw(15) << std::fixed << std::setprecision(6) << geom_x
+                          << std::setw(15) << std::fixed << std::setprecision(6) << geom_y
+                          << std::setw(15) << std::fixed << std::setprecision(6) << mesh_x
+                          << std::setw(15) << std::fixed << std::setprecision(6) << mesh_y
+                          << std::setw(15) << indices(row, col)
+                          << std::setw(15) << std::fixed << std::setprecision(6) << distance << std::endl;
+            }
+        }
+        std::cout << std::endl;
+    }
+}
+
+void GraphMesh::compareMeshParametrizationData(const std::vector<MeshParametrizationData>& data1,
+                                    const std::vector<MeshParametrizationData>& data2) {
+    for (size_t i = 0; i < data1.size(); ++i) {
+        const auto& d1 = data1[i];
+        const auto& d2 = data2[i];
+
+        std::cout << "Comparison of MeshParametrizationData " << i + 1 << ":\n";
+
+        // Compare numBranches
+        std::cout << std::setw(20) << "numBranches:" << std::setw(10) << d1.numBranches
+                  << std::setw(10) << d2.numBranches << "\n\n";
+
+        // Compare widths
+        std::cout << "Widths:\n";
+        printMatrixComparison(d1.widths, d2.widths);
+        // Compare terminals
+        std::cout << "Terminals:\n";
+        printMatrixComparison(d1.terminals, d2.terminals);
+        // Compare vectors
+        std::cout << "Vectors:\n";
+        printMatrixComparison(d1.vectors, d2.vectors);
+        std::cout << "\n";
+    }
+}
+
+void GraphMesh::printMatrixComparison(const Eigen::MatrixXd& m1, const Eigen::MatrixXd& m2) {
+    int width = 15;
+    int precision = 6;
+    // Print column headers
+    std::cout << std::string(m1.cols() * width, ' ') << " | " << std::string(m2.cols() * width, ' ') << "\n";
+    for (int i = 0; i < m1.rows(); ++i) {
+        // Print row of first matrix
+        for (int j = 0; j < m1.cols(); ++j) {
+            std::cout << std::setw(width) << std::fixed << std::setprecision(precision) << m1(i, j);
+        }
+        std::cout << " | ";
+        // Print row of second matrix
+        for (int j = 0; j < m2.cols(); ++j) {
+            std::cout << std::setw(width) << std::fixed << std::setprecision(precision) << m2(i, j);
+        }
+        std::cout << "\n";
+    }
+    std::cout << "\n";
 }

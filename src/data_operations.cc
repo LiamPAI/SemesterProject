@@ -101,15 +101,12 @@ std::vector<double> DataOperations::generateRotationAngles(double rotation_granu
         angles.push_back(i * rotation_granularity);
     }
 
-    // Declare random number generator necessary to add a few more random rotations
-    std::random_device rd;
-    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0, 360);
 
     // Initialize number of desired random rotations, generate random samples, and add to these to the return vector
     int num_random = int(num_rotations * random_proportion);
     for (int i = 0; i < num_random; ++i) {
-        angles.push_back(dis(gen));
+        angles.push_back(dis(rng));
     }
     return angles;
 }
@@ -695,9 +692,11 @@ MeshParametrizationData DataOperations::generateMultiBranchParametrization(int n
     LF_ASSERT_MSG(false, "Incorrect number of branches sent to generateMultiBranchParametrization, " << num);
 }
 
+// TODO: Have a verbose output so we know where we are in the generation process of the data set, especially for large ones
 // The purpose of this function is to generate an entire data set full of the "MeshParametrizationData" type using the
 // parameters given in params and the corresponding GenerationParams struct
-ParametrizationDataSet DataOperations::generateParametrizationDataSet(GenerationParams &gen_params) {
+ParametrizationDataSet DataOperations::generateParametrizationDataSet(
+    GenerationParams &gen_params, bool verbose) {
     // Declare the dataset and reserve space for it
     ParametrizationDataSet data_set;
     data_set.reserve(gen_params.datasetSize);
@@ -716,6 +715,14 @@ ParametrizationDataSet DataOperations::generateParametrizationDataSet(Generation
     int base_limit = 10;
     int count_displace = 0;
     int displace_limit = 10;
+
+    // Report progress every 1% for large datasets, and every 10% for small datasets
+    int progress = 0;
+    int progress_step;
+    if (gen_params.datasetSize > 250) progress_step = gen_params.datasetSize / 100;
+    else progress_step = gen_params.datasetSize / 10;
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto last_report_time = start_time;
 
     // Iterate until we have our desired dataset size
     while (data_set.size() < gen_params.datasetSize) {
@@ -810,7 +817,31 @@ ParametrizationDataSet DataOperations::generateParametrizationDataSet(Generation
                 }
             }
         }
+        // If verbose is true, and we've made enough progress, we print the progress we've made and the
+        // time it took to do so
+        if (verbose and data_set.size() >= progress + progress_step) {
+            auto current_time = std::chrono::high_resolution_clock::now();
+            auto total_duration = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+            auto step_duration = std::chrono::duration_cast<std::chrono::seconds>(current_time - last_report_time).count();
+
+            progress = data_set.size();
+            std::cout << "Generated " << progress << " / " << gen_params.datasetSize << " entries ("
+                      << (progress * 100 / gen_params.datasetSize) << "%) "
+                      << "Total time: " << total_duration << "s, "
+                      << "Last " << progress_step << " entries: " << step_duration << "s" << std::endl;
+
+            last_report_time = current_time;
+        }
     }
+
+    // Print the total time it took to generate this dataset
+    if (verbose) {
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto total_duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time).count();
+        std::cout << "Dataset generation complete. Total entries: " << data_set.size()
+                  << ", Total time: " << total_duration << "s" << std::endl;
+    }
+
     // Trim the dataset to the exact size we want and return it
     if (data_set.size() > gen_params.datasetSize) {
         data_set.erase(data_set.begin() + gen_params.datasetSize, data_set.end());

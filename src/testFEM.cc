@@ -281,21 +281,17 @@ void test_mesh(std::string path, int degree) {
 }
 
 int main() {
-    test_mesh("/meshes/test0.msh", 1);
-//    test_mesh("/meshes/test4.msh", 2);
+    // test_mesh("/meshes/test0.msh", 1);
+    // test_mesh("/meshes/test4.msh", 2);
 
-
-    // GraphMesh mesh;
-    //
-    // try
-    // {
-    //     mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
-    // }
-    // catch (const std::exception& e) {
-    //     std::cerr << "An error occurred: " << e.what() << std::endl;
-    //     return 1;
-    // }
-    //
-    // return 0;
-
+    GraphMesh mesh;
+    try
+    {
+        mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "An error occurred: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
 }

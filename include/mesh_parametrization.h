@@ -15,7 +15,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
-#include <cmath>
+#include <future>
 #include <cassert>
 #include <filesystem>
 #include <gmsh.h>
@@ -69,6 +69,8 @@ namespace MeshParametrization {
     bool intersectionBranches(const Eigen::MatrixXd &poly_points_1, const Eigen::MatrixXd &poly_points_2);
     bool selfIntersection(const Eigen::MatrixXd &poly_points);
     std::optional<Eigen::VectorXi> connectionPoints(MeshParametrizationData &multiBranch);
+    MeshParametrizationData pointToParametrization(const Eigen::MatrixXd &poly_points);
+
 
     bool meshParamValidator(MeshParametrizationData &param);
 

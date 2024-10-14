@@ -37,6 +37,7 @@ hunter_add_package(ZLIB)
 
 # Add pybind11
 add_subdirectory(pybind11)
+set(PYBIND11_INCLUDE_DIRS ${pybind11_INCLUDE_DIRS})
 
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
@@ -61,6 +62,7 @@ add_executable(metal_foam_mesh ${SOURCES}
 target_include_directories(metal_foam_mesh PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${GMSH_INCLUDE_DIR}
+        ${PYBIND11_INCLUDE_DIRS}
 )
 
 target_link_libraries(metal_foam_mesh PRIVATE
@@ -82,7 +84,9 @@ add_executable(test_mesh_parametrization
 
 target_include_directories(test_mesh_parametrization PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${GMSH_INCLUDE_DIR})
+        ${GMSH_INCLUDE_DIR}
+        ${PYBIND11_INCLUDE_DIRS}
+)
 
 target_link_libraries(test_mesh_parametrization PRIVATE
         LF::lf.base
@@ -103,7 +107,9 @@ add_executable(test_data_operations
 
 target_include_directories(test_data_operations PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${GMSH_INCLUDE_DIR})
+        ${GMSH_INCLUDE_DIR}
+        ${PYBIND11_INCLUDE_DIRS}
+)
 
 target_link_libraries(test_data_operations PRIVATE
         LF::lf.base
@@ -122,8 +128,10 @@ target_link_libraries(test_data_operations PRIVATE
 pybind11_add_module(metal_foams_py src/bindings.cc ${SOURCES})
 target_include_directories(metal_foams_py PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${GMSH_INCLUDE_DIR})
+        ${GMSH_INCLUDE_DIR}
+        ${pybind11_INCLUDE_DIRS})
 target_link_libraries(metal_foams_py PRIVATE
+        pybind11::module
         LF::lf.base
         LF::lf.assemble
         LF::lf.fe

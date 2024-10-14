@@ -252,6 +252,46 @@ bool MeshParametrization::selfIntersection(const Eigen::MatrixXd &poly_points) {
     return true;
 }
 
+// TODO: Test this function
+// This function takes in a matrix representing the points of a parametrization and returns the corresponding
+// parametrization object, also ensuring it is "valid"
+MeshParametrizationData MeshParametrization::pointToParametrization(const Eigen::MatrixXd &poly_points) {
+
+    // Declare necessary objects for parametrization
+    int num_branches = poly_points.rows() / 4;
+    Eigen::MatrixXd widths(num_branches, 3);
+    Eigen::MatrixXd terminals(num_branches * 2, 3);
+    Eigen::MatrixXd vectors(num_branches * 2, 3);
+
+    for (int i = 0; i < num_branches; ++i) {
+        widths(i, 0) = (poly_points.block<2, 1>(4 * i, 0) -
+            poly_points.block<2, 1>(4 * i + 2, 0)).norm();
+        widths(i, 1) = (poly_points.block<2, 1>(4 * i, 1) -
+        poly_points.block<2, 1>(4 * i + 2, 1)).norm();
+        widths(i, 2) = (poly_points.block<2, 1>(4 * i, 2) -
+            poly_points.block<2, 1>(4 * i + 2, 2)).norm();
+
+        terminals.block<2, 1>(2 * i, 0) = (poly_points.block<2, 1>(4 * i, 0) +
+            poly_points.block<2, 1>(4 * i + 2, 0)) / 2;
+        terminals.block<2, 1>(2 * i, 1) = (poly_points.block<2, 1>(4 * i, 1) +
+            poly_points.block<2, 1>(4 * i + 2, 1)) / 2;
+        terminals.block<2, 1>(2 * i, 2) = (poly_points.block<2, 1>(4 * i, 2) +
+            poly_points.block<2, 1>(4 * i + 2, 2)) / 2;
+
+        vectors.block<2, 1>(2 * i, 0) = (poly_points.block<2, 1>(4 * i, 0) -
+            poly_points.block<2, 1>(4 * i + 2, 0)).normalized();
+        vectors.block<2, 1>(2 * i, 1) = (poly_points.block<2, 1>(4 * i, 1) -
+        poly_points.block<2, 1>(4 * i + 2, 1)).normalized();
+        vectors.block<2, 1>(2 * i, 2) = (poly_points.block<2, 1>(4 * i, 2) -
+            poly_points.block<2, 1>(4 * i + 2, 2)).normalized();
+    }
+
+    MeshParametrizationData parametrization {num_branches, widths, terminals, vectors};
+    LF_ASSERT_MSG(meshParamValidator(parametrization), "Invalid polynomial points sent to the function "
+    "pointToParametrization, with values \n" << poly_points);
+    return parametrization;
+}
+
 // This method takes in a parametrization and returns a matrix containing the points that overlap using our
 // numbering convention, this assumes that the parametrization is "correct" already in that we go from "in" to out"
 // for the multi-branch case, so the only valid overlapping points will be in the first column of poly_points
@@ -388,6 +428,7 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
     return true;
 }
 
+// TODO: Reorganize and comment this function with the new try-catch functionality
 // The purpose of this function is to take in a parametrization and create a mesh with the given mesh_name, this will
 // allow for the necessary finite element calculations, note that it is assumed the given parametrization is "correct"
 void MeshParametrization::generateMesh(MeshParametrizationData &parametrization, const std::string &mesh_name,
@@ -397,6 +438,8 @@ void MeshParametrization::generateMesh(MeshParametrizationData &parametrization,
 
     // I'm choosing not to add a model name due to possible repeats, only initializing gmsh
     gmsh::initialize();
+
+    gmsh::option::setNumber("General.Verbosity", 2);
 
     // In this case, there are just 6 points to add, 2 linear lines, 2 splines, and a surface with all curves
     if (parametrization.numBranches == 1) {
@@ -692,13 +735,14 @@ bool MeshParametrization::elasticRegion(const Eigen::MatrixXd &stresses, double 
     return true;
 }
 
+// TODO: Add timeout capabilities in case generateMesh goes wrong for some unforeseen reason, and recomment the
+//  function once I know it works, mesh generation should never take more than 10s
 // This function takes in a parametrization and a vector of displacements representing boundary conditions and returns
 // the energy difference for the finite element calculation. Note that displacement has shape (4 * numBranches)
 // by 1 if a multi branch, 2 if a single branch
 std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizationData &param,
     Eigen::MatrixXd &displacement, const calculationParams &calc_params) {
 
-    // Generate the mesh we want to perform a FEM calculation on
     generateMesh(param, "displacementEnergy", calc_params.meshSize, calc_params.order);
     auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
     const std::filesystem::path here = __FILE__;
