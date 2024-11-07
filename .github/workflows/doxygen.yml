@@ -1,0 +1,38 @@
+name: Doxygen Documentation
+
+# Controls when the action will run
+on:
+  push:
+    branches: [ main ]    # Triggers on push to main branch
+  pull_request:
+    branches: [ main ]    # Optional: also triggers on PRs to main
+  # Optional: Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs
+jobs:
+  build-documentation:
+    runs-on: ubuntu-latest    # Use Ubuntu as our running environment
+
+    steps:
+      # Checks-out your repository
+      - uses: actions/checkout@v2
+
+      # Install required packages
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      # Generate documentation
+      - name: Generate Doxygen Documentation
+        run: doxygen Doxyfile
+
+      # Deploy to GitHub Pages
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./doc/html  # Adjust this path to match your Doxyfile's OUTPUT_DIRECTORY
+          force_orphan: true        # Make sure we don't keep history of documentation updates
+          enable_jekyll: false
