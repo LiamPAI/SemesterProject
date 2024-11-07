@@ -282,8 +282,8 @@ void test_rotateParametrizationEntry() {
     displacements_multi << 1, -1, 1, -1, 1, 0, -1, 0, 1, -1, 1, -1, 1, 0, -1, 0;
     basic_multi_entry.displacements = displacements_multi;
 
-    auto single_dataset = DataOperations::rotateParametrizationEntry(basic_single_entry, rand_params, rng);
-    auto multi_dataset = DataOperations::rotateParametrizationEntry(basic_multi_entry, rand_params, rng);
+    auto single_dataset = DataOperations::rotateParametrization(basic_single_entry, rand_params, rng);
+    auto multi_dataset = DataOperations::rotateParametrization(basic_multi_entry, rand_params, rng);
 
     printParametrizationDataSet(single_dataset);
     printParametrizationDataSet(multi_dataset);
@@ -377,7 +377,7 @@ void test_generateDisplacementBCs() {
     double youngs_modulus = 1000000000;
     double poisson = 0.33;
     double yield_stress = 5000000;
-    double percent = 0.25; // This and perturb probability are the main parameters to modify
+    std::pair<double, double> percent {0.25, 0.6}; // This and perturb probability are the main parameters to modify
     double mesh_size = 0.1; // This as well
     int order = 1;
     double perturb_probability = 1;
@@ -448,7 +448,7 @@ void test_generateParametrizationDataSet() {
     std::pair vector(22.5, 1.0);
     std::pair terminal(0.1, 0.05);
     int num_displace = 2;
-    double percent = 0.5;
+    std::pair<double, double> percent (0.5, 0.75);
     double prob = 0.5;
     double mesh_size = 0.1;
     int o = 1;
@@ -487,7 +487,7 @@ void test_parametrizationToPoint() {
     std::pair vector(22.5, 1.0);
     std::pair terminal(0.1, 0.05);
     int num_displace = 2;
-    double percent = 0.5;
+    std::pair<double, double> percent (0.5, 0.75);
     double prob = 0.5;
     double mesh_size = 0.1;
     int o = 1;
@@ -534,7 +534,7 @@ void test_saveDataSet() {
     std::pair vector(22.5, 1.0);
     std::pair terminal(0.1, 0.05);
     int num_displace = 2;
-    double percent = 0.5;
+    std::pair<double, double> percent (0.5, 0.75);
     double prob = 0.5;
     double mesh_size = 0.1;
     int o = 1;

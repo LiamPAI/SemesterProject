@@ -135,3 +135,11 @@ Physical Curve("EB5", 22) = {11, 20, 16, 19};
 Physical Surface("E4", 23) = {6};
 //+
 Physical Surface("E5", 24) = {7};
+//+
+Physical Curve("BC1", 25) = {4};
+//+
+Physical Curve("BC2", 26) = {9};
+//+
+Physical Curve("BC3", 27) = {15};
+//+
+Physical Curve("BC4", 28) = {16};
