@@ -7,6 +7,7 @@
 #include <gmsh.h>
 #include <iostream>
 #include <filesystem>
+#include <linear_matrix_computation.h>
 #include <unordered_set>
 
 // The following are helpers function that aid in the building of the "graph" for the mesh the NN is attempting to
@@ -24,6 +25,7 @@
 
 // TODO: Delete all print statements once done testing
 // TODO: make node portion length optional when building a graph
+// TODO: Make sure to include the BC logic somewhere in the description
 
 // Constructor and Destructor
 GraphMesh::GraphMesh() {
@@ -36,26 +38,34 @@ GraphMesh::~GraphMesh() {
     }
 }
 
-// Checking methods depending on N, NB, E, or EB labels
-bool GraphMesh::isNode(const std::string& name) {
-    return name[0] == 'N' && name[1] != 'B';
+// Checking methods depending on N, NB, E, EB, or BC labels
+bool GraphMesh::isBC(const std::string &name) {
+    return name[0] == 'B' and name[1] == 'C';
 }
 
-bool GraphMesh::isNodeBoundary(const std::string& name) {
+bool GraphMesh::isNode(const std::string &name) {
+    return name[0] == 'N' and name[1] != 'B';
+}
+
+bool GraphMesh::isNodeBoundary(const std::string &name) {
     return name.substr(0, 2) == "NB";
 }
 
-bool GraphMesh::isEdge(const std::string& name) {
-    return name[0] == 'E' && name[1] != 'B';
+bool GraphMesh::isEdge(const std::string &name) {
+    return name[0] == 'E' and name[1] != 'B';
 }
 
-bool GraphMesh::isEdgeBoundary(const std::string& name) {
+bool GraphMesh::isEdgeBoundary(const std::string &name) {
     return name.substr(0, 2) == "EB";
 }
 
 // Extracts the Id (e.g. for N4 the id is 4) from the physical name of the entity
-int GraphMesh::extractId(const std::string& name) {
-    return std::stoi(name.substr(isNodeBoundary(name) || isEdgeBoundary(name) ? 2 : 1));
+int GraphMesh::extractId(const std::string &name) {
+    return std::stoi(name.substr(isNodeBoundary(name) or isEdgeBoundary(name) ? 2 : 1));
+}
+
+int GraphMesh::extractBCId(const std::string &name) {
+    return std::stoi(name.substr(2));
 }
 
 // Opens the file with the mesh we are interested in, note that this file will have a *.msh extension
@@ -110,12 +120,48 @@ void GraphMesh::buildGraphFromMesh() {
 
     std::cout << "Found " << groups.size() << " physical groups.\n";
 
+    // TODO: Since I want to input BC physical groups into the mesh, I will be adding extra physical groups on the lines,
+    //  so find a way to skip over these in this loop, as they are not relevant for building the graph
+    // TODO: Perhaps also find a way to initialize the BCs of the graph using this loop actually
     // Iterate through each group using its dimension and corresponding tag
     for (const auto& [dim, tag] : groups) {
 
         // Extract the name and id from this group
         std::string name;
         gmsh::model::getPhysicalName(dim, tag, name);
+
+        // If this is a boundary line, we initialize the corresponding boundary but then skip over the
+        // rest of the implementation
+        if (isBC(name)) {
+            int id = extractBCId(name);
+            std::vector<int> entities;
+            gmsh::model::getEntitiesForPhysicalGroup(dim, tag, entities);
+
+            std::cout << "Processing group: " << name << " (dim: " << dim << ", tag: " << tag << ", id: " << id << ")\n";
+            std::cout << "  Entities: ";
+            for (int entity : entities) std::cout << entity << " ";
+            std::cout << "\n";
+
+            boundaries[id].id = id;
+            boundaries[id].curveTag = entities[0];
+            boundaries[id].physicalTag = tag;
+
+            std::vector<double> tMin, tMax;
+            gmsh::model::getParametrizationBounds(1, entities[0], tMin, tMax);
+
+            std::vector<double> startPoint;
+            gmsh::model::getValue(1, entities[0], tMin, startPoint);
+            Eigen::Vector2d start_point;
+            start_point << startPoint[0], startPoint[1];
+
+            std::vector<double> endPoint;
+            gmsh::model::getValue(1, entities[0], tMax, endPoint);
+            Eigen::Vector2d end_point;
+            end_point << endPoint[0], endPoint[1];
+
+            boundaries[id].points = {start_point, end_point};
+            continue;
+        }
         int id = extractId(name);
 
         // Obtain entities for this group for a node this will be the physical surface, and for a boundary, this will include
@@ -473,6 +519,7 @@ std::vector<Eigen::MatrixXd> GraphMesh::getGeometryPolynomialPoints(const PartGr
     return points_vector;
 }
 
+// TODO: make sure that order here is correctly called using the desired generation params
 // This function takes in a part_graph and the file name to the corresponding mesh that generated our partGraph,
 // and returns the actual polynomial points of the mesh, which will correspond to the closest nodes on the mesh,
 // and we can therefore easily compare displacement vectors, it also returns the indices of the nodes we used
@@ -483,7 +530,7 @@ std::pair<std::vector<Eigen::MatrixXd>, std::vector<Eigen::MatrixXi>> GraphMesh:
     auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
     std::filesystem::path project_root = std::filesystem::current_path().parent_path();
     std::filesystem::path mesh_dir = project_root / "meshes";
-    std::filesystem::path full_path = mesh_dir / (mesh_file_name + ".msh");
+    std::filesystem::path full_path = mesh_dir / mesh_file_name;
 
     lf::io::GmshReader reader(std::move(factory), full_path);
     const std::shared_ptr<lf::mesh::Mesh> mesh_ptr = reader.mesh();
@@ -551,6 +598,7 @@ std::vector<MeshParametrizationData> GraphMesh::getGeometryParametrizations(cons
     return params_vector;
 }
 
+// TODO: Make sure order here will correctly be called with the generation params
 // This function takes in a graph of parts, a file name, and an order and outputs the corresponding vector of
 // parametrizations on the actual mesh, where the points used to determine these parametrizations are the actual
 // nodes on the mesh
@@ -565,6 +613,26 @@ std::vector<MeshParametrizationData> GraphMesh::getMeshParametrizations(const Pa
         params_vector.push_back(parametrization);
     }
     return params_vector;
+}
+
+// This function returns a vector of basic displacement vectors for the part graph for the NN to optimize later
+std::vector<Eigen::MatrixXd> GraphMesh::getInitialDisplacements(const PartGraph &part_graph) {
+
+    std::vector<Eigen::MatrixXd> initial_displacements;
+    for (const auto& part : part_graph.parts) {
+        if (part.type == MeshPart::NODE) {
+            int num = part.connectedEdges.size();
+            Eigen::MatrixXd zeros (num * 4, 1);
+            zeros.setZero();
+            initial_displacements.push_back(zeros);
+        }
+        else {
+            Eigen::MatrixXd zeros (4, 2);
+            zeros.setZero();
+            initial_displacements.push_back(zeros);
+        }
+    }
+    return initial_displacements;
 }
 
 // This function takes in a vector of parametrizations represented by their points, and returns the same vector of parametrizations,
@@ -724,8 +792,8 @@ std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const 
                         int index = std::distance(part_graph.adjacencyList[part_graph.adjacencyList[i][j]].begin(), it);
 
                         std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
-                        std::pair<int, int> first {j, 2};
-                        std::pair<int, int> second {index, 2};
+                        std::pair<int, int> first {j, 0};
+                        std::pair<int, int> second {index, 0};
                         compatibility_conditions.emplace_back(indices, first, second);
                     }
                     else {
@@ -736,8 +804,8 @@ std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const 
 
                         // Initialize the pairs that will make up this compatibility condition
                         std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
-                        std::pair<int, int> first {j, 2};
-                        std::pair<int, int> second {0, is_first_node ? 0 : 2};
+                        std::pair<int, int> first {j, 0};
+                        std::pair<int, int> second {0, is_first_node ? 0 : 1};
                         compatibility_conditions.emplace_back(indices, first, second);
                     }
                 }
@@ -762,8 +830,8 @@ std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const 
                         bool is_first_node = (edge.connectedNodes[0] == part_graph.parts[i].id);
 
                         std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
-                        std::pair<int, int> first {0, is_first_node ? 0 : 2};
-                        std::pair<int, int> second {index, 2};
+                        std::pair<int, int> first {0, is_first_node ? 0 : 1};
+                        std::pair<int, int> second {index, 1};
                         compatibility_conditions.emplace_back(indices, first, second);
                     }
                     else {
@@ -771,8 +839,8 @@ std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const 
                             part_graph.parts[part_graph.adjacencyList[i][j]].subId;
 
                         std::pair<int, int> indices {i, part_graph.adjacencyList[i][j]};
-                        std::pair<int, int> first {0, is_first_part ? 2 : 0};
-                        std::pair<int, int> second {0, is_first_part ? 0 : 2};
+                        std::pair<int, int> first {0, is_first_part ? 1 : 0};
+                        std::pair<int, int> second {0, is_first_part ? 0 : 1};
                         compatibility_conditions.emplace_back(indices, first, second);
                     }
                 }
@@ -780,6 +848,276 @@ std::vector<CompatibilityCondition> GraphMesh::getCompatibilityConditions(const 
         }
     }
     return compatibility_conditions;
+}
+
+// This function takes in the part graph, and the desired displacement boundary conditions, then finds the
+// parametrizations that can be given the boundary conditions, and returns the vector of displacement boundary
+// conditions corresponding to what was given, in the correct format for the NN to handle
+std::vector<FixedDisplacementCondition> GraphMesh::getFixedDisplacementConditions(
+        const PartGraph &part_graph, const std::vector<std::pair<int, Eigen::Vector4d>> &displacements) {
+
+    std::vector<int> possible_parametrizations(part_graph.parts.size(), 0);
+    auto compatibility_conditions = getCompatibilityConditions(part_graph);
+
+    // Iterate through all compatibility conditions to see which ones only have 1, as these are the parametrizations
+    // that can be fixed displacement BCs
+    for (const auto& [indices, first, second] : compatibility_conditions) {
+        possible_parametrizations[indices.first]++;
+        possible_parametrizations[indices.second]++;
+    }
+
+    // We're able to get the geometric parametrizations because the used points will match the actual
+    // mesh parametrizations
+    auto parametrizations = getGeometryPolynomialPoints(part_graph);
+
+    // Collect all the parametrizations that only have one compatibility condition, and obtain their indices
+    std::vector<std::pair<int, Eigen::MatrixXd>> free_parametrizations;
+    for (int i = 0; i < possible_parametrizations.size(); ++i) {
+        if (possible_parametrizations[i] > 1) continue;
+        free_parametrizations.emplace_back(i, parametrizations[i]);
+    }
+
+    std::vector<FixedDisplacementCondition> fixed_conditions;
+
+    // Iterate through the displacements to initialize our boundary conditions
+    for (const auto& [boundary_idx, displacement_vector] : displacements) {
+        bool added = false;
+
+        // First, we find the parametrization that corresponds to this boundary_idx
+        for (const auto& [index, param] : free_parametrizations) {
+            LineMapping param_lines (param.block<2, 1>(0, 0), param.block<2, 1>(2, 0),
+                param.block<2, 1>(0, 2), param.block<2, 1>(2, 2));
+
+            if (param_lines.isPointOnFirstLine(boundaries[boundary_idx].points.first) and
+                param_lines.isPointOnFirstLine(boundaries[boundary_idx].points.second)) {
+                added = true;
+                fixed_conditions.emplace_back(std::make_pair(index, 0), displacement_vector);
+
+            }
+            else if (param_lines.isPointOnSecondLine(boundaries[boundary_idx].points.first) and
+                param_lines.isPointOnSecondLine(boundaries[boundary_idx].points.second)) {
+                added = true;
+                fixed_conditions.emplace_back(std::make_pair(index, 1), displacement_vector);
+            }
+            if (added) break;
+        }
+        LF_ASSERT_MSG(added, "The provided displacement condition in getFixedDisplacementConditions is invalid");
+    }
+    return fixed_conditions;
+}
+
+// TODO: Make sure somehow through generation params that the order is variable here
+// TODO: Delete unnecessary statements once this function has been tested
+// TODO: double check whether this is a planeStrain calculation (it is if this is set to true)
+
+// This function performs the large FEM calculation of an overall mesh given certain displacement boundary conditions,
+// and returns the associated displacement vectors and energy change
+std::pair<Eigen::VectorXd, double> GraphMesh::meshFEMCalculation(const std::string &mesh_file_name,
+        const std::vector<std::pair<int, Eigen::Vector4d>> &displacements, const calculationParams &calc_params) {
+
+    // Initialize the necessary objects from LehrFEM++ to run the calculation
+    auto factory = std::make_unique<lf::mesh::hybrid2d::MeshFactory>(2);
+    const std::filesystem::path here = __FILE__;
+    auto working_dir = here.parent_path().parent_path();
+    auto mesh_full_path = working_dir / "meshes" / mesh_file_name;
+
+    lf::io::GmshReader reader(std::move(factory), mesh_full_path);
+    const std::shared_ptr<lf::mesh::Mesh> mesh_ptr = reader.mesh();
+
+    std::shared_ptr<lf::uscalfe::UniformScalarFESpace<double>> fe_space;
+    if (calc_params.order == 1){
+        fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO1<double>>(mesh_ptr);
+    }
+    else {
+        fe_space = std::make_shared<lf::uscalfe::FeSpaceLagrangeO2<double>>(mesh_ptr);
+    }
+
+    const lf::assemble::DofHandler &dofh {fe_space->LocGlobMap()};
+    const lf::uscalfe::size_type N_dofs {dofh.NumDofs()};
+    const lf::mesh::Mesh &mesh {*mesh_ptr};
+
+    // Initialize our boundary conditions to 0 everywhere to start out
+    lf::mesh::utils::CodimMeshDataSet bd_flags{mesh_ptr, 2, false};
+    std::vector<std::pair<bool, Eigen::Vector2d>> displacementBCs(N_dofs);
+    for (auto& bc : displacementBCs) {
+        bc.first = false;
+        bc.second = Eigen::Vector2d::Zero();
+    }
+
+    // Line up the displacement boundary conditions with the boundaries so they have the same indices the tuple
+    // contains (id, physical tag, index in displacements)
+    std::vector<std::tuple<int, int, int>> physical_boundary_tags (displacements.size());
+    for (int i = 0; i < displacements.size(); i++) {
+        physical_boundary_tags.emplace_back(displacements[i].first, boundaries[displacements[i].first].physicalTag, i);
+    }
+
+    // Iterate through all edges to find valid displacement BCs
+    for (const lf::mesh::Entity *edge: mesh.Entities((1))) {
+        int id = -1;
+        int index;
+        bool found = false;
+
+        // Find if the edge has one of the physical tags we're interested in
+        for (int i = 0; i < reader.PhysicalEntityNr(*edge).size(); ++i) {
+            for (int j = 0; j < physical_boundary_tags.size(); j++) {
+                if (reader.PhysicalEntityNr(*edge)[i] == std::get<1>(physical_boundary_tags[j])) {
+                    id = std::get<0>(physical_boundary_tags[j]);
+                    index = std::get<2>(physical_boundary_tags[j]);
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+
+        // If id is not -1, our edge is a part of a displacement BC
+        if (id != -1) {
+
+            // Iterate through the nodes on this edge, and prescribe a displacement BC if we haven't done so already
+            for (auto node : edge->SubEntities(1)) {
+                if (!bd_flags(*node)) {
+                    bd_flags(*node) = true;
+
+                    LineMapping my_lines (boundaries[id].points.first, boundaries[id].points.second,
+                    boundaries[id].points.first + displacements[index].second.block<2, 1>(0, 0),
+                    boundaries[id].points.second + displacements[index].second.block<2, 1>(2, 0));
+
+                    auto my_point = node->Geometry()->Global(node->Geometry()->RefEl().NodeCoords());
+
+                    Eigen::Vector2d BC = my_lines.mapPoint(my_point) - my_point;
+
+                    displacementBCs[mesh.Index(*node)] = {true, BC};
+                }
+            }
+        }
+    }
+
+    // Declare matrices and vector that will hold our solution, phi doesn't need to be changed for now
+    lf::assemble::COOMatrix<double> A(N_dofs*2, N_dofs*2);
+    Eigen::Matrix<double, Eigen::Dynamic, 1> phi(N_dofs*2);
+    phi.setZero();
+
+    // Build the stiffness matrix
+    // TODO: double check whether this is a planeStrain calculation (it is if this is set to true)
+    if (calc_params.order == 1) {
+        LinearMatrixComputation::LinearFEElementMatrix assemble{calc_params.youngsModulus,
+            calc_params.poissonRatio, true};
+        LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
+    }
+    else {
+        ParametricMatrixComputation::ParametricFEElementMatrix assemble{calc_params.youngsModulus,
+            calc_params.youngsModulus, true};
+        LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
+    }
+
+    // Send to fixFlaggedSolutionsComponents to fit to the shape mentioned in NUMPDE 2.7.6.15
+    MeshParametrization::fixFlaggedSolutionComponentsLE(displacementBCs, A, phi);
+
+    // Solve the liner system and return the resulting displacement vector
+    Eigen::SparseMatrix A_crs = A.makeSparse();
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    solver.compute(A_crs);
+    Eigen::VectorXd sol_vec = solver.solve(phi);
+
+    bool linear_elastic;
+    double energy = 0;
+
+    // Calculate the stress and strains to check if we are still in the linear elastic region, and calculate the energy
+    if (calc_params.order == 1){
+        LinearMatrixComputation::LinearFEElementMatrix assemble{calc_params.youngsModulus,
+            calc_params.poissonRatio, true};
+        auto stresses_strains = LinearElasticityAssembler::stressStrainLoader(
+            mesh_ptr, sol_vec, assemble, calc_params.order);
+        energy = LinearElasticityAssembler::energyCalculator(mesh_ptr, sol_vec, assemble, calc_params.order);
+        linear_elastic = MeshParametrization::elasticRegion(
+            std::get<2>(stresses_strains), calc_params.yieldStrength);
+    }
+    else {
+        ParametricMatrixComputation::ParametricFEElementMatrix assemble{calc_params.youngsModulus,
+            calc_params.poissonRatio, true};
+        auto stresses_strains = LinearElasticityAssembler::stressStrainLoader(
+            mesh_ptr, sol_vec, assemble, calc_params.order);
+        energy = LinearElasticityAssembler::energyCalculator(mesh_ptr, sol_vec, assemble, calc_params.order);
+        linear_elastic = MeshParametrization::elasticRegion(
+            std::get<2>(stresses_strains), calc_params.yieldStrength);
+    }
+
+    if (linear_elastic) {
+        std::cout << "The provided displacement boundaries still allows for the shape to be in the linear elastic "
+                     "region, with the energy being " << energy << std::endl;
+    }
+    else {
+        std::cout << "WARNING: The provided displacement boundary conditions are outside of the linear elastic region "
+                     "of the material, this may lead to incorrect results in the NN, with the energy being " << energy
+                    << std::endl;
+    }
+    return {sol_vec, energy};
+}
+
+// This function takes in our part graph, and the file name to our mesh, runs the FEM calculation, and returns the
+// "true" displacement vectors for each of the parametrizations in a list with the same order as the parametrizations
+// for easy comparison with the NN's results
+std::pair<std::vector<Eigen::MatrixXd>, std::vector<Eigen::MatrixXd>> GraphMesh::meshDisplacementVectors(
+    const PartGraph &part_graph, const std::string &mesh_file_name, const std::vector<std::pair<int,
+    Eigen::Vector4d>> &fixed_displacements, const calculationParams &calc_params) {
+
+    std::vector<Eigen::MatrixXd> true_displacements;
+    auto [points_vector, indices_vector] = getMeshPolynomialPoints(part_graph, mesh_file_name, calc_params.order);
+    auto [displacements, energy] = meshFEMCalculation(mesh_file_name, fixed_displacements, calc_params);
+
+    for (const auto &indices : indices_vector) {
+        int num_branches = indices.rows() / 2;
+
+        // If this is a single branch parametrization, the displacements are from the left and right sides
+        if (num_branches == 1) {
+            Eigen::MatrixXd node_displacements(4, 2);
+            node_displacements(0, 0) = displacements[2 * indices(0, 0)];
+            node_displacements(1, 0) = displacements[2 * indices(0, 0) + 1];
+            node_displacements(0, 1) = displacements[2 * indices(0, 2)];
+            node_displacements(1, 1) = displacements[2 * indices(0, 2) + 1];
+            node_displacements(2, 0) = displacements[2 * indices(1, 0)];
+            node_displacements(3, 0) = displacements[2 * indices(1, 0) + 1];
+            node_displacements(2, 1) = displacements[2 * indices(1, 2) ];
+            node_displacements(3, 1) = displacements[2 * indices(1, 2) + 1];
+            true_displacements.push_back(node_displacements);
+        }
+        else {
+            Eigen::MatrixXd node_displacements(num_branches * 4, 1);
+            for (int i = 0; i < num_branches; ++i) {
+                node_displacements(i * 4) = displacements[2 * indices(2 * i, 2)];
+                node_displacements(i * 4 + 1) = displacements[2 * indices(2 * i, 2) + 1];
+                node_displacements(i * 4 + 2) = displacements[2 * indices(2 * i + 1, 2)];
+                node_displacements(i * 4 + 3) = displacements[2 * indices(2 * i + 1, 2) + 1];
+            }
+            true_displacements.push_back(node_displacements);
+        }
+    }
+    return std::make_pair(points_vector, true_displacements);
+}
+
+// This function uses the results from meshDisplacementVectors to calculate the actual energy change of each
+// parametrization, and returns a list of all these energy values (in the order of the parametrizations) for easy
+// comparison with the NN's results
+std::tuple<std::vector<Eigen::MatrixXd>, std::vector<Eigen::MatrixXd>, std::vector<double>> GraphMesh::meshEnergy(
+        const PartGraph &part_graph, const std::string &mesh_file_name,
+        const std::vector<std::pair<int, Eigen::Vector4d>> &fixed_displacements, const calculationParams &calc_params) {
+
+    std::vector<double> true_energies;
+    auto [points_vector, true_displacements] = meshDisplacementVectors(
+        part_graph, mesh_file_name, fixed_displacements, calc_params);
+
+    // Before running our calculations, we make sure to close the file we've already opened so that new meshes
+    // don't interfere
+    closeMesh();
+
+    for (int i = 0; i < points_vector.size(); ++i) {
+        auto param = MeshParametrization::pointToParametrization(points_vector[i]);
+        auto [linear_elastic, energy] = MeshParametrization::displacementEnergy(
+            param, true_displacements[i], calc_params);
+        true_energies.push_back(energy);
+    }
+
+    return {points_vector, true_displacements, true_energies};
 }
 
 // TODO: Test this guy one more time with a very complicated geometry mesh where there are multiple edges
@@ -969,6 +1307,7 @@ void GraphMesh::printMeshGeometry() {
     }
 }
 
+// TODO: Cleanup this method
 void GraphMesh::buildSplitAndPrintMesh(const std::string& filename, double targetPartSize, double nodeEdgePortion) {
     loadMeshFromFile(filename);
 
@@ -997,24 +1336,54 @@ void GraphMesh::buildSplitAndPrintMesh(const std::string& filename, double targe
     auto training_params = getNNTrainingParams(partGraph);
     printTrainingParams(training_params);
 
-    auto conditions = getCompatibilityConditions(partGraph);
-    printCompatibilityConditions(conditions);
+    // auto conditions = getCompatibilityConditions(partGraph);
+    // printCompatibilityConditions(conditions);
+    //
+    // auto geom_points = getGeometryPolynomialPoints(partGraph);
+    //
+    // auto [mesh_points, mesh_indices] = getMeshPolynomialPoints(partGraph, "testNE3.msh", 1);
+    // printMeshData(geom_points, mesh_points, mesh_indices);
+    //
+    // auto mesh_parametrizations = getMeshParametrizations(partGraph, "testNE3.msh", 1);
+    // auto geom_parametrizations = getGeometryParametrizations(partGraph);
+    //
+    // compareMeshParametrizationData(geom_parametrizations, mesh_parametrizations);
+    //
+    // auto centered_mesh_parametrizations = centerMeshParametrizations(mesh_parametrizations);
+    // compareMeshParametrizationData(mesh_parametrizations, centered_mesh_parametrizations);
 
-    auto geom_points = getGeometryPolynomialPoints(partGraph);
+    // auto centered_mesh_points = centerPointParametrizations(mesh_points);
+    // printMeshData(mesh_points, centered_mesh_points, mesh_indices);
+    //
+    // auto init_displacements = getInitialDisplacements(partGraph);
+    // printMeshParamsAndDisplacements(centered_mesh_parametrizations, init_displacements);
+    //
+    // std::vector<std::pair<int, Eigen::Vector4d>> test_displacements(3);
+    // Eigen::Vector4d disp1;
+    // disp1 << -0.0002, -0.0002, -0.0001, 0.0001;
+    // Eigen::Vector4d disp2;
+    // disp2 << -0.001,-0.001, -0.001, -0.001;
+    // Eigen::Vector4d disp3;
+    // disp3 << 0.000, 0.000, 0.000, 0.000;
+    // test_displacements[0] = {1, disp1};
+    // test_displacements[1] = {2, disp2};
+    // test_displacements[2] = {3, disp3};
+    //
+    // calculationParams calc_params (5000000, 1000000000, 0.33, 0.05, 1);
+    //
+    // auto fixed_conditions = getFixedDisplacementConditions(partGraph, test_displacements);
+    //
+    // printFixedDisplacementConditions(fixed_conditions);
+    //
+    // auto disp_energy = meshFEMCalculation("testNE3.msh",
+    //     test_displacements, calc_params);
+    //
+    // std::cout << "The value of the true total energy change here is " << disp_energy.second << std::endl;
+    //
+    // auto data = meshEnergy(partGraph, "testNE3.msh", test_displacements, calc_params);
+    //
+    // printMeshParamsAndEnergies(data);
 
-    auto [mesh_points, mesh_indices] = getMeshPolynomialPoints(partGraph, "testNE1", 1);
-    printMeshData(geom_points, mesh_points, mesh_indices);
-
-    auto mesh_parametrizations = getMeshParametrizations(partGraph, "testNE1", 1);
-    auto geom_parametrizations = getGeometryParametrizations(partGraph);
-
-    compareMeshParametrizationData(geom_parametrizations, mesh_parametrizations);
-
-    auto centered_mesh_parametrizations = centerMeshParametrizations(mesh_parametrizations);
-    compareMeshParametrizationData(mesh_parametrizations, centered_mesh_parametrizations);
-
-    auto centered_mesh_points = centerPointParametrizations(mesh_points);
-    printMeshData(mesh_points, centered_mesh_points, mesh_indices);
 }
 
 void GraphMesh::printGraphState() {
@@ -1040,6 +1409,17 @@ void GraphMesh::printGraphState() {
         std::cout << "\n    Connected Nodes: ";
         for (int node : edge.connectedNodes) std::cout << node << " ";
         std::cout << std::endl;
+    }
+
+    std::cout << "Boundaries:\n";
+    std::cout << std::setfill('-') << std::setw(30) << "\n";
+    for (const auto& [boundaryID, boundary] : boundaries) {
+        std::cout << "Boundary " << boundaryID << ":\n";
+        std::cout << "  Physical Tag: " << boundary.physicalTag << "\n";
+        std::cout << "  Curve Tag: " << boundary.curveTag << "\n";
+        std::cout << "  Start and End Points: (" <<  boundary.points.first.transpose() << "), ("
+            << boundary.points.second.transpose() << ")\n";
+        std::cout << std::setfill('-') << std::setw(30) << "\n";
     }
 }
 
@@ -1166,3 +1546,121 @@ void GraphMesh::printMatrixComparison(const Eigen::MatrixXd& m1, const Eigen::Ma
     }
     std::cout << "\n";
 }
+
+void GraphMesh::printMeshParamsAndDisplacements(const std::vector<MeshParametrizationData> &mesh_params,
+                                        const std::vector<Eigen::MatrixXd> &displacements) {
+    for (size_t i = 0; i < mesh_params.size(); ++i) {
+        std::cout << "Index " << i << ":\n";
+        std::cout << "MeshParametrizationData:\n";
+        std::cout << "  numBranches: " << mesh_params[i].numBranches << "\n";
+
+        std::cout << "  widths:\n" << mesh_params[i].widths << "\n\n";
+        std::cout << "  terminals:\n" << mesh_params[i].terminals << "\n\n";
+        std::cout << "  vectors:\n" << mesh_params[i].vectors << "\n\n";
+
+        std::cout << "Corresponding Displacement Matrix:\n" << displacements[i] << "\n";
+
+        std::cout << "----------------------------------------\n";
+    }
+}
+
+void GraphMesh::printMeshParamsAndDisplacementsAndEnergies(const std::vector<MeshParametrizationData> &mesh_params,
+                                        const std::vector<Eigen::MatrixXd> &displacements,
+                                        const std::vector<double> &energies) {
+    for (size_t i = 0; i < mesh_params.size(); ++i) {
+        std::cout << "Index " << i << ":\n";
+        std::cout << "MeshParametrizationData:\n";
+        std::cout << "  numBranches: " << mesh_params[i].numBranches << "\n";
+
+        std::cout << "  widths:\n" << mesh_params[i].widths << "\n\n";
+        std::cout << "  terminals:\n" << mesh_params[i].terminals << "\n\n";
+        std::cout << "  vectors:\n" << mesh_params[i].vectors << "\n\n";
+
+        std::cout << "Corresponding Displacement Matrix:\n" << displacements[i] << "\n";
+        std::cout << "Corresponding Energy: \n" << energies[i] << "\n\n";
+
+        std::cout << "----------------------------------------\n";
+    }
+}
+
+void GraphMesh::printMeshParamsAndDisplacementsAndTrueEnergies(const std::vector<MeshParametrizationData> &mesh_params,
+                               const std::vector<Eigen::MatrixXd> &displacements,
+                               const std::vector<double> &NN_energies, const std::vector<double> &true_energies) {
+    for (size_t i = 0; i < mesh_params.size(); ++i) {
+        std::cout << "Index " << i << ":\n";
+        std::cout << "MeshParametrizationData:\n";
+        std::cout << "  numBranches: " << mesh_params[i].numBranches << "\n";
+
+        std::cout << "  widths:\n" << mesh_params[i].widths << "\n\n";
+        std::cout << "  terminals:\n" << mesh_params[i].terminals << "\n\n";
+        std::cout << "  vectors:\n" << mesh_params[i].vectors << "\n\n";
+
+        std::cout << "Corresponding Displacement Matrix:\n" << displacements[i] << "\n";
+        std::cout << "Corresponding NN Energy: \n" << NN_energies[i] << "\n\n";
+        std::cout << "Corresponding true Energy: \n" << true_energies[i] << "\n\n";
+
+        std::cout << "----------------------------------------\n";
+    }
+}
+
+void GraphMesh::printMeshPointsAndDisplacements(const std::vector<ParametrizationPoints> &mesh_points,
+                                const std::vector<Eigen::MatrixXd> &displacements,
+                                const std::vector<double> &energies) {
+    for (size_t i = 0; i < mesh_points.size(); ++i) {
+        std::cout << "Index " << i << ":\n";
+        std::cout << "Parametrization Points:\n";
+        std::cout << "  numBranches: " << mesh_points[i].numBranches << "\n";
+
+        std::cout << "  points:\n" << mesh_points[i].points << "\n\n";
+        std::cout << "Corresponding Displacement Matrix:\n" << displacements[i] << "\n\n";
+        std::cout << "Corresponding Energy: " << energies[i] << "\n";
+
+        std::cout << "----------------------------------------\n";
+    }
+}
+
+void GraphMesh::printMeshMatricesAndDisplacements(const std::vector<Eigen::MatrixXd> &mesh_points,
+                                const std::vector<Eigen::MatrixXd> &displacements,
+                                const std::vector<double> &NN_energies, const std::vector<double> &true_energies) {
+    for (size_t i = 0; i < mesh_points.size(); ++i) {
+        std::cout << "Index " << i << ":\n";
+        std::cout << "Parametrization Points:\n";
+
+        std::cout << "  points:\n" << mesh_points[i] << "\n\n";
+        std::cout << "Corresponding Displacement Matrix:\n" << displacements[i] << "\n\n";
+        std::cout << "Corresponding NN energy: " << NN_energies[i] << "\n";
+        std::cout << "Corresponding true energy: " << true_energies[i] << "\n";
+
+        std::cout << "----------------------------------------\n";
+    }
+}
+
+void GraphMesh::printFixedDisplacementConditions(const std::vector<FixedDisplacementCondition>& conditions) {
+    for (size_t i = 0; i < conditions.size(); ++i) {
+        const auto& condition = conditions[i];
+        std::cout << "Condition " << i << ":\n";
+        std::cout << "  Indices: (" << condition.indices.first << ", " << condition.indices.second << ")\n";
+        std::cout << "  Displacements: ["
+                  << condition.displacements[0] << ", "
+                  << condition.displacements[1] << ", "
+                  << condition.displacements[2] << ", "
+                  << condition.displacements[3] << "]\n";
+        std::cout << "\n";
+    }
+}
+
+void GraphMesh::printMeshParamsAndEnergies(const std::tuple<std::vector<Eigen::MatrixXd>,
+                                                 std::vector<Eigen::MatrixXd>,
+                                                 std::vector<double>>& data) {
+    const auto& [point_vector, displacement_vector, energy_vector] = data;
+    double total_energy = 0;
+    std::cout << "Values of the inidividual param calculations: " << std::endl;
+    for (int i = 0; i < point_vector.size(); ++i) {
+        std::cout << "Point Matrix " << i << "\n" << point_vector[i] << "\n";
+        std::cout << "Displacement BC " << i << "\n" << displacement_vector[i] << "\n";
+        std::cout << "Energy: " << energy_vector[i] << "\n";
+        total_energy += energy_vector[i];
+    }
+    std::cout << "\nTotal Energy: " << total_energy << std::endl;
+}
+

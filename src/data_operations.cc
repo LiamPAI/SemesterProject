@@ -4,6 +4,8 @@
 
 #include "../include/data_operations.h"
 
+#include <graph_mesh.h>
+
 // The following methods will contain the implementations of the methods declared in data_operations.h, their purpose
 // is to build the datasets for the NN to be trained later
 
@@ -203,7 +205,7 @@ std::vector<MeshParametrizationData> DataOperations::rotateParametrization(const
 // This function has the exact same functionality as rotateParametrization but does it for type ParametrizationEntry,
 // where the parametrization and the vector of displacements are rotated an equal amount, and the energy is kept
 // the same. This helps for the NN to be rotation-invariant
-ParametrizationDataSet DataOperations::rotateParametrizationEntry(ParametrizationEntry &param_entry,
+ParametrizationDataSet DataOperations::rotateParametrization(ParametrizationEntry &param_entry,
         std::pair<double, double> &rotation_params, std::mt19937 &rng) {
     ParametrizationDataSet rotated_data_set;
 
@@ -450,7 +452,8 @@ std::vector<MeshParametrizationData> DataOperations::generatePeturbedParametriza
                 return perturbed_vector;
             }
         }
-        return perturbed_vector;
+        // Center these perturbed vectors and return them
+        return GraphMesh::centerMeshParametrizations(perturbed_vector);
     }
 
     // Initialize vector of approximate lengths of branches
@@ -535,7 +538,7 @@ std::vector<MeshParametrizationData> DataOperations::generatePeturbedParametriza
             return perturbed_vector;
         }
     }
-    return perturbed_vector;
+    return GraphMesh::centerMeshParametrizations(perturbed_vector);
 }
 
 // The purpose of this function is to take in a parametrization, and return a ParametrizationDataset where all entries
@@ -550,10 +553,11 @@ ParametrizationDataSet DataOperations::generateDisplacementBCs(MeshParametrizati
     // Declare vector of max distances, which will be the variance when generating displacements
     std::vector<double> max_distances;
     ParametrizationDataSet displaced_entries;
+    std::uniform_real_distribution<double> unif(params.percentYieldStrength.first, params.percentYieldStrength.second);
 
     if (base_param.numBranches == 1) {
         // Use the following heuristic to determine the maximum allowable strain for calculating displacement vectors
-        double max_stress = params.percentYieldStrength * params.yieldStrength;
+        double max_stress = unif(params.rng) * params.yieldStrength;
         double max_strain = max_stress / params.modulusOfElasticity;
 
         // Obtain the std deviation we'll be using when rotating the vectors
@@ -592,7 +596,7 @@ ParametrizationDataSet DataOperations::generateDisplacementBCs(MeshParametrizati
 
         // Same calculation as in the single branch case, calculate a maximum allowable strain heuristic
         // for displacement vectors
-        double max_stress = params.percentYieldStrength * params.yieldStrength;
+        double max_stress = unif(params.rng) * params.yieldStrength;
         double max_strain = max_stress / params.modulusOfElasticity;
 
         for (int i = 0; i < base_param.numBranches; ++i) {
@@ -630,7 +634,7 @@ ParametrizationDataSet DataOperations::generateDisplacementBCs(MeshParametrizati
     }
 
     else {
-        LF_ASSERT_MSG(false, "Wrong number of branches sent to generatePerturbedParametrizations, "
+        LF_ASSERT_MSG(false, "Wrong number of branches sent to generateDisplacementBCs, "
         << base_param.numBranches);
     }
     return displaced_entries;
@@ -798,7 +802,7 @@ ParametrizationDataSet DataOperations::generateParametrizationDataSet(
             for (ParametrizationEntry disp_perturbed_base : displaced_perturbed_base) {
                 tagCounter[TagIndex::DISPLACEMENT]++;
                 tagCounter[TagIndex::ROTATION] = -1;
-                ParametrizationDataSet rotated = rotateParametrizationEntry(
+                ParametrizationDataSet rotated = rotateParametrization(
                     disp_perturbed_base, gen_params.dataRotationParams, gen_params.rng);
 
                 // Iterate through each rotated, displaced, and perturbed entry, flip them according to flip params
@@ -875,6 +879,17 @@ PointDataSet DataOperations::parametrizationToPoint(ParametrizationDataSet &para
         }
     }
     return point_data_set;
+}
+
+std::vector<ParametrizationPoints> DataOperations::parametrizationToPoint(
+    const std::vector<MeshParametrizationData> &param_vector) {
+    std::vector<ParametrizationPoints> points_vector;
+
+    for (MeshParametrizationData param : param_vector) {
+        ParametrizationPoints points {param.numBranches, MeshParametrization::polynomialPoints(param)};
+        points_vector.emplace_back(points);
+    }
+    return points_vector;
 }
 
 // This function takes in a file and MeshParametrizationData object and saves the object to the file

@@ -287,7 +287,7 @@ int main() {
     GraphMesh mesh;
     try
     {
-        mesh.buildSplitAndPrintMesh("testNE1.geo", 0.5, 0.1);
+        mesh.buildSplitAndPrintMesh("testNE3.geo", 1.5, 0.3);
     }
     catch (const std::exception& e) {
         std::cerr << "An error occurred: " << e.what() << std::endl;

@@ -6,8 +6,26 @@
 
 #include <lf/assemble/assemble_concepts.h>
 
+/**
+ * @brief Namespace for linear elasticity assembly operations
+ * @details Provides functions for assembling global Galerkin matrices and
+ *          vectors for the linear elasticity problem
+ */
 namespace LinearElasticityAssembler {
 
+    /**
+     * @brief Assembles global stiffness matrix from local contributions
+     * @details This uses the Eval functions of the @link LinearFEElementMatrix @endlink or @link
+     * ParametricFEElementMatrix @endlink and uses the local ordering of the shape functions to add to the global
+     * Galerkin matrix
+     * @tparam TMPMATRIX Matrix type for assembly
+     * @tparam ENTITY_MATRIX_PROVIDER Provider of element matrices
+     * @param codim Codimension of entities to process
+     * @param dof_handler_trial Trial space DOF handler
+     * @param dof_handler_test Test space DOF handler
+     * @param entity_matrix_provider Provider of element matrices
+     * @param matrix Global matrix to assemble into
+     */
     template<typename TMPMATRIX, lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>
     void AssembleMatrixLocally (lf::base::dim_t codim, const lf::assemble::DofHandler &dof_handler_trial,
                                 const lf::assemble::DofHandler &dof_handler_test, ENTITY_MATRIX_PROVIDER &entity_matrix_provider,
@@ -64,6 +82,19 @@ namespace LinearElasticityAssembler {
     }
 
     //This function will need to be called multiple times in case there is a body force
+    /**
+     * @brief Assembles global load vector from local contributions
+     * @details This uses the Eval functions of the @link LinearFELoadVector @endlink or @link
+     * ParametricFELoadVector @endlink and uses the local ordering of the shape functions to add to the global
+     * load vector. Note that similar to these classes, this was added for completely in the case where traction
+     * conditions or body forces are added, but ended up not being used in the implementation
+     * @tparam VECTOR Vector type for assembly
+     * @tparam ENTITY_VECTOR_PROVIDER Provider of element vectors
+     * @param codim Codimension of entities to process
+     * @param dof_handler DOF handler
+     * @param entity_vector_provider Provider of element vectors
+     * @param resultvector Global vector to assemble into
+     */
     template <typename VECTOR, lf::assemble::EntityVectorProvider ENTITY_VECTOR_PROVIDER>
     void AssembleVectorLocally(lf::base::dim_t codim, const lf::assemble::DofHandler &dof_handler,
                                ENTITY_VECTOR_PROVIDER &entity_vector_provider, VECTOR &resultvector) {
@@ -108,6 +139,18 @@ namespace LinearElasticityAssembler {
     // This also includes the strain matrix, which will have shape (3, num_quad_points)
     // The stress matrix will have the same shape as the strain matrix
     // The stress and strain will be paired with their vector of coordinates, with shape (2, num_quad_points)
+    /**
+     * @brief Computes stress and strain fields from displacement solution
+     * @details This uses the stressStrain functions of the @link LinearFEElementMatrix @endlink or @link
+     * ParametricFEElementMatrix @endlink classes, and concatenates all the results
+     * @tparam ENTITY_MATRIX_PROVIDER Provider of element matrices
+     * @param mesh_ptr Pointer to mesh
+     * @param disp_vec Global displacement vector
+     * @param assembler Matrix assembler
+     * @param degree FE space degree (1 or 2)
+     * @return Tuple of (displacement matrix, node coordinates, stress matrix,
+     *         strain matrix, quadrature point coordinates)
+     */
     template<lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>
     std::tuple<Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd> stressStrainLoader
             (const std::shared_ptr<lf::mesh::Mesh> &mesh_ptr, Eigen::VectorXd &disp_vec, ENTITY_MATRIX_PROVIDER &assembler, int degree) {
@@ -186,6 +229,17 @@ namespace LinearElasticityAssembler {
     }
 
     // This function iterates through all cells of the mesh, and sums up the energies from each cell
+    /**
+     * @brief Calculates total strain energy of the system
+     * @details This uses the energyCalc functions of the @link LinearFEElementMatrix @endlink or @link
+     * ParametricFEElementMatrix @endlink and sums over the results of all the cells
+     * @tparam ENTITY_MATRIX_PROVIDER Provider of element matrices
+     * @param mesh_ptr Pointer to mesh
+     * @param disp_vec Global displacement vector
+     * @param assembler Matrix assembler
+     * @param degree FE space degree
+     * @return Total strain energy
+     */
     template<lf::assemble::EntityMatrixProvider ENTITY_MATRIX_PROVIDER>
     double energyCalculator(const std::shared_ptr<lf::mesh::Mesh> &mesh_ptr,
         Eigen::VectorXd &disp_vec, ENTITY_MATRIX_PROVIDER &assembler, int degree) {

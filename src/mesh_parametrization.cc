@@ -278,6 +278,8 @@ MeshParametrizationData MeshParametrization::pointToParametrization(const Eigen:
         terminals.block<2, 1>(2 * i, 2) = (poly_points.block<2, 1>(4 * i, 2) +
             poly_points.block<2, 1>(4 * i + 2, 2)) / 2;
 
+        // We do top minus bottom here to mimic the way that polynomial points calculates its points so that the
+        // mappings match up
         vectors.block<2, 1>(2 * i, 0) = (poly_points.block<2, 1>(4 * i, 0) -
             poly_points.block<2, 1>(4 * i + 2, 0)).normalized();
         vectors.block<2, 1>(2 * i, 1) = (poly_points.block<2, 1>(4 * i, 1) -
@@ -428,7 +430,6 @@ bool MeshParametrization::meshParamValidator(MeshParametrizationData &param) {
     return true;
 }
 
-// TODO: Reorganize and comment this function with the new try-catch functionality
 // The purpose of this function is to take in a parametrization and create a mesh with the given mesh_name, this will
 // allow for the necessary finite element calculations, note that it is assumed the given parametrization is "correct"
 void MeshParametrization::generateMesh(MeshParametrizationData &parametrization, const std::string &mesh_name,
@@ -714,6 +715,7 @@ void MeshParametrization::fixFlaggedSolutionComponentsLE (std::vector<std::pair<
     }
 }
 
+// TODO: Delete this print statement later once done testing
 // This function takes in the stresses calculated at different quadrature points and checks if our
 // material has exited the linear elastic region using the von mises stress
 bool MeshParametrization::elasticRegion(const Eigen::MatrixXd &stresses, double yieldStrength) {
@@ -776,7 +778,7 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     // This loop goes through all edges to identify which are on the boundaries we are interested in
     for (const lf::mesh::Entity *edge: mesh.Entities((1))) {
 
-        // If the physical entity vector is non-empty, we
+        // If the physical entity vector is non-empty, we investigate the edge's nodes
         if (!reader.PhysicalEntityNr(*edge).empty()) {
             int tag = reader.PhysicalEntityNr(*edge)[0];
 
@@ -795,7 +797,6 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
                             displacement.block((tag - 1) * 4, 0, 4, displacement.cols()),
                             node->Geometry()->Global(node->Geometry()->RefEl().NodeCoords()));
                     }
-
                     displacementBCs[mesh.Index(*node)] = {true, BC};
                 }
             }
@@ -811,12 +812,12 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     // TODO: double check whether this is a planeStrain calculation (it is if this is set to true)
     if (calc_params.order == 1) {
         LinearMatrixComputation::LinearFEElementMatrix assemble{calc_params.youngsModulus,
-            calc_params.poissonRatio, false};
+            calc_params.poissonRatio, true};
         LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
     }
     else {
         ParametricMatrixComputation::ParametricFEElementMatrix assemble{calc_params.youngsModulus,
-            calc_params.poissonRatio, false};
+            calc_params.poissonRatio, true};
         LinearElasticityAssembler::AssembleMatrixLocally(0, dofh, dofh, assemble, A);
     }
 
@@ -835,7 +836,7 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     // Calculate the stress and strains to check if we are still in the linear elastic region, and calculate the energy
     if (calc_params.order == 1){
         LinearMatrixComputation::LinearFEElementMatrix assemble{calc_params.youngsModulus,
-            calc_params.poissonRatio, false};
+            calc_params.poissonRatio, true};
         auto stresses_strains = LinearElasticityAssembler::stressStrainLoader(
             mesh_ptr, sol_vec, assemble, calc_params.order);
         energy = LinearElasticityAssembler::energyCalculator(mesh_ptr, sol_vec, assemble, calc_params.order);
@@ -843,7 +844,7 @@ std::pair<bool, double> MeshParametrization::displacementEnergy(MeshParametrizat
     }
     else {
         ParametricMatrixComputation::ParametricFEElementMatrix assemble{calc_params.youngsModulus,
-            calc_params.poissonRatio, false};
+            calc_params.poissonRatio, true};
         auto stresses_strains = LinearElasticityAssembler::stressStrainLoader(
             mesh_ptr, sol_vec, assemble, calc_params.order);
         energy = LinearElasticityAssembler::energyCalculator(mesh_ptr, sol_vec, assemble, calc_params.order);
