@@ -1,0 +1,31 @@
+/** @mainpage Metal Foams Semester Project
+ *
+ * The following is documentation related to the Semester Project titled "Machine Learning Based Simulation of
+ * Elastic Foam-like Structures" by Liam Curtis
+ *
+ * It combines C++ implementations for mesh generation and FEM calculations created in tandem with the LEHRFEM++ library
+ * with Python-based neural network training and analysis.
+ *
+ * @section structure Project Structure
+ * - include/: C++ header files
+ *   - linear_matrix_computation.h: First-order FEM algorithms
+ *   - parametric_matrix_computation.h: Second-order FEM algorithms
+ *   - linear_elasticity_assembler.h: FEM assembly algorithms
+ *   - line_mapping.h: Functionality for checking properties of two lines
+ *   - mesh_parametrization.h: Parametrization generation, validation, and processing
+ *   - data_operations.h: Dataset generation, validation, and storage
+ *   - graph_mesh.h: Metal foam mesh validation and processing
+ *
+ * - src/: C++ source files for mesh operations
+ *   - linear_matrix_computation.cc: First-order FEM algorithms implementation
+ *   - parametric_matrix_computation.cc: Second-order FEM algorithms implementation
+ *   - line_mapping.cc: Functionality for checking properties of two lines implementation
+ *   - mesh_parametrization.cc: Parametrization generation, validation, and processing implementation
+ *   - data_operations.cc: Dataset generation, validation, and storage implementation
+ *   - graph_mesh.cc: Metal foam mesh validation and processing implementation
+ *
+ * - python/: Python implementations for neural networks
+ *   - neural_network.py: Core neural network implementations
+ *   - experiment_parameters.py: Experiment configurations
+ *   - calculate_displacements.py: Displacement optimization
+ */

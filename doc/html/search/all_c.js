@@ -1,0 +1,22 @@
+var searchData=
+[
+  ['neural_5fnetwork_0',['neural_network',['../namespaceneural__network.html',1,'']]],
+  ['neural_5fnetwork_2epy_1',['neural_network.py',['../neural__network_8py.html',1,'']]],
+  ['neuralnetwork_2',['NeuralNetwork',['../classneural__network_1_1_neural_network.html',1,'neural_network']]],
+  ['neuralnetworktrainer_3',['NeuralNetworkTrainer',['../classneural__network_1_1_neural_network_trainer.html',1,'neural_network']]],
+  ['nn_5fmodel_4',['NN_model',['../classneural__network_1_1_neural_network_trainer.html#aed09baa5c9180bdceed60a624339a9f7',1,'neural_network::NeuralNetworkTrainer']]],
+  ['nntrainingparams_5',['NNTrainingParams',['../struct_n_n_training_params.html',1,'NNTrainingParams'],['../struct_n_n_training_params.html#ace2f1eabc2a6d6cd8ffa4d6948421ea3',1,'NNTrainingParams::NNTrainingParams()']]],
+  ['node_6',['NODE',['../struct_mesh_part.html#a4317bcc3eaf4de407f7599aa254c3a3ea6bced315504908f4eb50dba34c44191a',1,'MeshPart']]],
+  ['node2d_7',['Node2D',['../struct_node2_d.html',1,'']]],
+  ['nodes_8',['nodes',['../class_graph_mesh.html#aa3f6281813689df21df1e3da33988b97',1,'GraphMesh']]],
+  ['normalize_5fenergy_9',['normalize_energy',['../namespaceneural__network.html#a07ea05d0d053f28d50f0e97d9f636dba',1,'neural_network']]],
+  ['normalize_5finput_10',['normalize_input',['../namespaceneural__network.html#a8ea1dabac4b29dcb65fc19c257f4a09a',1,'neural_network']]],
+  ['normalizevectors_11',['normalizeVectors',['../namespace_mesh_parametrization.html#af570cae2ac6a402af20d6fb7faeecec1',1,'MeshParametrization']]],
+  ['nu_12',['nu',['../class_linear_matrix_computation_1_1_linear_f_e_element_matrix.html#ac7d8ea07abb47a1e0d6984ed1391fa32',1,'LinearMatrixComputation::LinearFEElementMatrix::nu'],['../class_parametric_matrix_computation_1_1_parametric_f_e_element_matrix.html#aefa3ad387bbc8faed3db55e3f7b317d0',1,'ParametricMatrixComputation::ParametricFEElementMatrix::nu']]],
+  ['num_5fbranches_13',['num_branches',['../classneural__network_1_1_neural_network.html#ac9fef833aef280582e1e9347988a9fc7',1,'neural_network::NeuralNetwork']]],
+  ['num_5ftags_14',['NUM_TAGS',['../data__operations_8h.html#a124dab2ed7941f6ea9293d26064a0e39',1,'data_operations.h']]],
+  ['numbertoboolvector_15',['numberToBoolVector',['../namespace_data_operations.html#af2301cb80271dc293823b47300057412',1,'DataOperations']]],
+  ['numbranches_16',['numBranches',['../struct_parametrization_points.html#a06e8568d929def54095413eb2d60a047',1,'ParametrizationPoints::numBranches'],['../struct_point_entry.html#ad856fcc00413570e3b00d3778c2b8249',1,'PointEntry::numBranches'],['../struct_parametrization_entry.html#a96d7469f6124ff71dc42faabdf6f71e0',1,'ParametrizationEntry::numBranches'],['../struct_generation_params.html#afe31a30af2ae8df6b767d7d4e6b26956',1,'GenerationParams::numBranches'],['../struct_mesh_parametrization_data.html#adda268017d91178d76eccae27c55ab01',1,'MeshParametrizationData::numBranches']]],
+  ['numdisplacements_17',['numDisplacements',['../struct_generation_params.html#a68eda4156fc4e7b1f1e4d86b0748ecfe',1,'GenerationParams::numDisplacements'],['../struct_displacement_params.html#ae2002a8bec71cbd9d226f02a8e9eb304',1,'DisplacementParams::numDisplacements']]],
+  ['numperturbations_18',['numPerturbations',['../struct_generation_params.html#aa575faddd987d5ab06b70e8651ec113d',1,'GenerationParams::numPerturbations'],['../struct_perturbation_params.html#aedca50ae460ae2ee3813800e9fc3db84',1,'PerturbationParams::numPerturbations']]]
+];
